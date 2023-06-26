@@ -61,41 +61,36 @@ impl From<Marker> for usize {
 /// ```
 #[derive(Debug, Clone)]
 pub struct SyntaxBuilder<'a> {
-    expression: Option<(&'a str, &'a str)>,
-    block: Option<(&'a str, &'a str)>,
+    expression: (&'a str, &'a str),
+    block: (&'a str, &'a str),
     whitespace: &'a char,
 }
 
 impl<'a> SyntaxBuilder<'a> {
     /// Create a new SyntaxBuilder.
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            expression: None,
-            block: None,
-            whitespace: &'-',
-        }
-    }
-
-    /// Create a new instance of Syntax according to the Ash defaults.
+    ///
+    /// The delimiters have defaults as described here:
     ///
     /// Expressions: (( name ))
     /// Blocks: (* if ... *)
     /// Whitespace: ((- -)) / (*- -*)
+    ///
+    /// To proceed with these defaults, you may immediately call [.build()]
+    /// to receive the Syntax instance.
     #[inline]
-    pub fn default_ash_syntax() -> Syntax {
-        SyntaxBuilder::new()
-            .expression("((", "))")
-            .block("(*", "*)")
-            .whitespace(&'-')
-            .build()
+    pub fn new() -> Self {
+        Self {
+            expression: ("((", "))"),
+            block: ("(*", "*)"),
+            whitespace: &'-',
+        }
     }
 
     /// Set the expression delimiters.
     #[inline]
     pub fn expression(&mut self, begin_expr: &'a str, end_expr: &'a str) -> &mut Self {
         assert!(!begin_expr.is_empty() && !end_expr.is_empty());
-        self.expression = Some((begin_expr, end_expr));
+        self.expression = (begin_expr, end_expr);
 
         self
     }
@@ -104,7 +99,7 @@ impl<'a> SyntaxBuilder<'a> {
     #[inline]
     pub fn block(&mut self, begin_block: &'a str, end_block: &'a str) -> &mut Self {
         assert!(!begin_block.is_empty() && !end_block.is_empty());
-        self.block = Some((begin_block, end_block));
+        self.block = (begin_block, end_block);
 
         self
     }
@@ -121,19 +116,19 @@ impl<'a> SyntaxBuilder<'a> {
     /// Build a Syntax instance from the given delimiters.
     pub fn build(&self) -> Syntax {
         let mut markers = Vec::new();
+
+        let (ex0, ex1) = self.expression;
+        let (bl0, bl1) = self.block;
         let ws = self.whitespace;
-        if let Some((begin, end)) = self.expression {
-            markers.push((Marker::BeginExpression as usize, begin.into()));
-            markers.push((Marker::EndExpression as usize, end.into()));
-            markers.push((Marker::BeginExpressionTrim as usize, format!("{begin}{ws}")));
-            markers.push((Marker::EndExpressionTrim as usize, format!("{ws}{end}")));
-        };
-        if let Some((begin, end)) = self.block {
-            markers.push((Marker::BeginBlock as usize, begin.into()));
-            markers.push((Marker::EndBlock as usize, end.into()));
-            markers.push((Marker::BeginBlockTrim as usize, format!("{begin}{ws}")));
-            markers.push((Marker::EndBlockTrim as usize, format!("{ws}{end}")));
-        }
+
+        markers.push((Marker::BeginExpression.into(), ex0.into()));
+        markers.push((Marker::EndExpression.into(), ex1.into()));
+        markers.push((Marker::BeginExpressionTrim.into(), format!("{ex0}{ws}")));
+        markers.push((Marker::EndExpressionTrim.into(), format!("{ws}{ex1}")));
+        markers.push((Marker::BeginBlock.into(), bl0.into()));
+        markers.push((Marker::EndBlock.into(), bl1.into()));
+        markers.push((Marker::BeginBlockTrim.into(), format!("{bl0}{ws}")));
+        markers.push((Marker::EndBlockTrim.into(), format!("{ws}{bl1}")));
 
         Syntax::new(markers)
     }
