@@ -4,6 +4,14 @@ use crate::Marker;
 pub enum Token {
     /// Raw text.
     Raw,
+    /// String literal within a tag.
+    String,
+    /// Number within a tag.
+    Number,
+    /// Identifier (unquoted string) within a tag.
+    Ident,
+    /// Whitespace within a tag.
+    Whitespace,
     /// Beginning of an expression - (( by default.
     BeginExpression,
     /// End of an expression - )) by default.

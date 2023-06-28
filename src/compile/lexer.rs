@@ -1,7 +1,6 @@
 use super::token::Token;
 use crate::{types::Region, SyntaxBuilder};
 use scout::Search;
-use std::ops::Range;
 
 pub struct Lexer<'source> {
     /// Utility for searching text for patterns.
@@ -46,8 +45,131 @@ impl<'source> Lexer<'source> {
 
         match self.state {
             State::Default => self.lex_default(c),
-            State::Block => todo!(),
-            State::Expression => todo!(),
+            State::Tag { .. } => self.lex_tag(c),
+        }
+    }
+
+    fn lex_tag(&mut self, from: usize) -> Option<Region<Token>> {
+        match self.finder.starts_with(self.source, from) {
+            Some((id, length)) => {
+                let (token, is_trimmed) = Token::from_usize_trim(id);
+
+                match self.state {
+                    State::Tag { ref end_token } => {
+                        // Matching end.
+                        if token == *end_token {
+                            self.state = State::Default;
+                            self.left_trim = is_trimmed;
+                            self.cursor = length;
+                            return Some(Region::new(token, from..length));
+                        } else {
+                            panic!("unexpected token found while lexing tag")
+                        }
+                    }
+                    _ => panic!("unexpected state for lex_tag"),
+                }
+            }
+            None => {
+                // An iterator over the remaining source, with the index adjusted to match the
+                // true position based on our "from" parameter.
+                let mut iterator = self.source[from..]
+                    .char_indices()
+                    .map(|(d, c)| (from + d, c));
+
+                let (index, char) = iterator.next().unwrap();
+
+                return match char {
+                    '"' => self.lex_string(iterator, index), // which tokens should we care about?
+                    c if c.is_whitespace() => Some(self.lex_whitespace(iterator, index)),
+                    c if c.is_ascii_digit() => Some(self.lex_digit(iterator, index)),
+                    c if is_ident_or_keyword(c) => Some(self.lex_ident_or_keyword(iterator, index)),
+                    _ => todo!(),
+                };
+            }
+        }
+    }
+
+    fn lex_digit<I>(&mut self, mut iter: I, from: usize) -> Region<Token>
+    where
+        I: Iterator<Item = (usize, char)>,
+    {
+        loop {
+            match iter.next() {
+                Some((index, char)) if !char.is_ascii_digit() => {
+                    self.cursor = index;
+                    break Region::new(Token::Number, from..index);
+                }
+                Some((_, _)) => continue,
+                None => return Region::new(Token::Number, from..self.source.len()),
+            }
+        }
+    }
+
+    fn lex_whitespace<I>(&mut self, mut iter: I, from: usize) -> Region<Token>
+    where
+        I: Iterator<Item = (usize, char)>,
+    {
+        loop {
+            match iter.next() {
+                Some((index, char)) if !char.is_whitespace() => {
+                    self.cursor = index;
+                    break Region::new(Token::Whitespace, from..index);
+                }
+                Some((_, _)) => continue,
+                None => return Region::new(Token::Whitespace, from..self.source.len()),
+            }
+        }
+    }
+
+    fn lex_string<I>(&mut self, mut iter: I, from: usize) -> Option<Region<Token>>
+    where
+        I: Iterator<Item = (usize, char)> + Clone,
+    {
+        let mut curr = '"';
+        loop {
+            match iter.next() {
+                Some((index, '"')) if curr != '\\' => {
+                    // Accept a double quote as a signal to end the string, unless the previous
+                    // character was an escape.
+                    //
+                    // Add one to the index of the character to comply with string slice
+                    // semantics.
+                    let to = index + 1;
+                    self.cursor = to;
+
+                    return Some(Region {
+                        data: Token::String,
+                        position: from..to,
+                    });
+                }
+                Some((_, char)) => {
+                    // Assign character to "curr" and move on. We use "curr" to determine
+                    // if a double quote should be escaped.
+                    //
+                    // We are using CharIndices, so no need to keep track of the index.
+                    curr = char;
+                }
+                None => {
+                    panic!("found delimited string during lex_string");
+                }
+            }
+        }
+    }
+
+    fn lex_ident_or_keyword<I>(&mut self, mut iter: I, from: usize) -> Region<Token>
+    where
+        I: Iterator<Item = (usize, char)> + Clone,
+    {
+        loop {
+            match iter.next() {
+                Some((index, char)) if !is_ident_or_keyword(char) => {
+                    self.cursor = index;
+                    // TODO: Return Token::Keyword for special cases like "if" / "let" etc..
+                    break Region::new(Token::Ident, from..index);
+                }
+                Some((_, _)) => continue,
+                None => break Region::new(Token::Ident, from..self.source.len()),
+            }
         }
     }
 
@@ -81,8 +203,16 @@ impl<'source> Lexer<'source> {
                 let (token, is_trimmed) = Token::from_usize_trim(id);
 
                 match &token {
-                    Token::BeginExpression => self.state = State::Expression,
-                    Token::BeginBlock => self.state = State::Block,
+                    Token::BeginExpression => {
+                        self.state = State::Tag {
+                            end_token: Token::EndExpression,
+                        }
+                    }
+                    Token::BeginBlock => {
+                        self.state = State::Tag {
+                            end_token: Token::EndBlock,
+                        }
+                    }
                     // TODO: Proper error here instead of panic
                     _ => panic!("unexpected token in top-level scope"),
                 }
@@ -113,35 +243,130 @@ impl<'source> Lexer<'source> {
     }
 }
 
+fn is_ident_or_keyword(c: char) -> bool {
+    matches!(c, '0'..='9' | 'A'..='Z' | 'a'..='z' | '_')
+}
+
+#[derive(Debug, PartialEq)]
 enum State {
     Default,
-    Block,
-    Expression,
+    /// Tag refers to a Block or Expression.
+    Tag {
+        /// The expected end Token to pair with this Tag.
+        /// Either "))" or "*)" by default.
+        end_token: Token,
+    },
 }
 
 #[cfg(test)]
 mod tests {
     use super::Lexer;
-    use crate::{compile::token::Token, types::Region};
+    use crate::{
+        compile::{lexer::State, token::Token},
+        types::Region,
+    };
 
     #[test]
     fn test_lex_default_no_match() {
-        let mut lexer = Lexer::new("lorem ipsum");
+        let source = "lorem ipsum";
+        let mut lexer = Lexer::new(source);
         let expect = Region::new(Token::Raw, 0..11);
-        assert_eq!(lexer.next(), Some(expect))
+        assert_eq!(lexer.next(), Some(expect));
+        println!("Raw: {:?}", source.get(0..11));
     }
 
     #[test]
     fn test_lex_default_match_no_trim() {
-        let mut lexer = Lexer::new("lorem ipsum (( dolor ...");
+        let source = "lorem ipsum (( dolor ...";
+        let mut lexer = Lexer::new(source);
         let expect = Region::new(Token::Raw, 0..12);
-        assert_eq!(lexer.next(), Some(expect))
+        assert_eq!(lexer.next(), Some(expect));
+        // Range should contain whitespace on the right side of "ipsum".
+        println!("Raw: {:?}", source.get(0..12));
     }
 
     #[test]
     fn test_lex_default_match_trim() {
         let source = "lorem ipsum ((- dolor ...";
         let mut lexer = Lexer::new(source);
-        assert_eq!(lexer.next(), Some(Region::new(Token::Raw, 0..11)))
+        assert_eq!(lexer.next(), Some(Region::new(Token::Raw, 0..11)));
+        // Range should not contain whitespace on the right side of "ipsum".
+        println!("Raw: {:?}", source.get(0..11));
+    }
+
+    #[test]
+    fn test_lex_default_match_state() {
+        let mut block_lexer = Lexer::new("lorem (*");
+        let mut expression_lexer = Lexer::new("lorem ((");
+        block_lexer.next();
+        expression_lexer.next();
+        assert_eq!(
+            block_lexer.state,
+            State::Tag {
+                end_token: Token::EndBlock
+            }
+        );
+        assert_eq!(
+            expression_lexer.state,
+            State::Tag {
+                end_token: Token::EndExpression
+            }
+        );
+        println!("Block lexer state: {:?}", block_lexer.state);
+        println!("Expression lexer state: {:?}", expression_lexer.state);
+    }
+
+    #[test]
+    fn test_lex_digit() {
+        let source = "(( 10 ))";
+        let mut lexer = Lexer::new(source);
+        assert_eq!(
+            lexer.next().unwrap(),
+            Region::new(Token::BeginExpression, 0..2)
+        );
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 2..3));
+        println!("Number: {:?}", source.get(3..5));
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Number, 3..5));
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 5..6));
+        assert_eq!(
+            lexer.next().unwrap(),
+            Region::new(Token::EndExpression, 6..8)
+        );
+    }
+
+    #[test]
+    fn test_lex_ident() {
+        let source = "(( hello ))";
+        let mut lexer = Lexer::new(source);
+        assert_eq!(
+            lexer.next().unwrap(),
+            Region::new(Token::BeginExpression, 0..2)
+        );
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 2..3));
+        println!("Ident: {:?}", source.get(3..8));
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Ident, 3..8));
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 8..9));
+        assert_eq!(
+            lexer.next().unwrap(),
+            Region::new(Token::EndExpression, 9..11)
+        );
+    }
+
+    #[test]
+    fn test_lex_string() {
+        let source = "(( \"name\" ))";
+        let mut lexer = Lexer::new(source);
+        assert_eq!(
+            lexer.next().unwrap(),
+            Region::new(Token::BeginExpression, 0..2)
+        );
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 2..3));
+        println!("String: {:?}", source.get(3..9));
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::String, 3..9));
+        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 9..10));
+        assert_eq!(
+            lexer.next().unwrap(),
+            Region::new(Token::EndExpression, 10..12)
+        );
     }
 }
