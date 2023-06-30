@@ -200,7 +200,7 @@ impl<'source> Lexer<'source> {
             let range_text = self.source.get(from..to);
             assert_ne!(range_text, None, "valid range is required to check keyword");
 
-            match range_text.unwrap() {
+            match range_text.unwrap().to_lowercase().as_str() {
                 "if" => Region::new(Token::Keyword(Keyword::If), from..to),
                 "let" => Region::new(Token::Keyword(Keyword::Let), from..to),
                 "for" => Region::new(Token::Keyword(Keyword::For), from..to),
@@ -411,7 +411,8 @@ mod tests {
             Region::new(Token::EndExpression, 6..8),
         ];
 
-        lex_next_auto("(( if ))", expect);
+        // Lexer should convert to lowercase, so this should be okay.
+        lex_next_auto("(( IF ))", expect);
     }
 
     #[test]
