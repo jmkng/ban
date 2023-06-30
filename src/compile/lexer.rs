@@ -1,5 +1,8 @@
 use super::token::Token;
-use crate::{types::Region, SyntaxBuilder};
+use crate::{
+    types::{Error, LexResult, Region},
+    SyntaxBuilder,
+};
 use scout::Search;
 
 pub struct Lexer<'source> {
@@ -7,6 +10,8 @@ pub struct Lexer<'source> {
     finder: Search,
     /// Text that is being analyzed.
     source: &'source str,
+    ///
+
     /// State determines the action taken when [.next()] is called.
     state: State,
     /// Position within source.
@@ -31,14 +36,14 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    pub fn next(&mut self) -> Option<Region<Token>> {
+    pub fn next(&mut self) -> LexResult {
         // Always prefer taking from the buffer when possible.
         if let Some(next) = self.buffer.take() {
-            return Some(next);
+            return Ok(Some(next));
         }
 
         if self.source[self.cursor..].is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let c = self.cursor;
@@ -49,7 +54,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn lex_tag(&mut self, from: usize) -> Option<Region<Token>> {
+    fn lex_tag(&mut self, from: usize) -> LexResult {
         match self.finder.starts_with(self.source, from) {
             Some((id, length)) => {
                 let (token, is_trimmed) = Token::from_usize_trim(id);
@@ -61,9 +66,24 @@ impl<'source> Lexer<'source> {
                             self.state = State::Default;
                             self.left_trim = is_trimmed;
                             self.cursor = length;
-                            return Some(Region::new(token, from..length));
+                            return Ok(Some(Region::new(token, from..length)));
                         } else {
-                            panic!("unexpected token found while lexing tag")
+                            let which = if *end_token == Token::EndExpression {
+                                "expression"
+                            } else {
+                                "block"
+                            };
+
+                            let range = self.source.get(from..length);
+                            assert_ne!(range, None, "valid error must contain range");
+
+                            let message = format!(
+                                "unexpected token `{token}` found at {}, \
+                                have you closed the {which} with `{end_token}`?",
+                                range.unwrap()
+                            );
+
+                            return Err(Error::Lex(message));
                         }
                     }
                     _ => panic!("unexpected state for lex_tag"),
@@ -80,10 +100,16 @@ impl<'source> Lexer<'source> {
 
                 return match char {
                     '"' => self.lex_string(iterator, index), // which tokens should we care about?
-                    c if c.is_whitespace() => Some(self.lex_whitespace(iterator, index)),
-                    c if c.is_ascii_digit() => Some(self.lex_digit(iterator, index)),
-                    c if is_ident_or_keyword(c) => Some(self.lex_ident_or_keyword(iterator, index)),
-                    _ => todo!(),
+                    c if c.is_whitespace() => Ok(Some(self.lex_whitespace(iterator, index))),
+                    c if c.is_ascii_digit() => Ok(Some(self.lex_digit(iterator, index))),
+                    c if is_ident_or_keyword(c) => {
+                        Ok(Some(self.lex_ident_or_keyword(iterator, index)))
+                    }
+                    // TODO: temporary error message, should be made more useful as
+                    // implementation grows.
+                    _ => Err(Error::Lex(format!(
+                        "encountered unexpected character `{char}`"
+                    ))),
                 };
             }
         }
@@ -121,14 +147,14 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn lex_string<I>(&mut self, mut iter: I, from: usize) -> Option<Region<Token>>
+    fn lex_string<I>(&mut self, mut iter: I, from: usize) -> LexResult
     where
         I: Iterator<Item = (usize, char)> + Clone,
     {
-        let mut curr = '"';
+        let mut previous = (from, '"');
         loop {
             match iter.next() {
-                Some((index, '"')) if curr != '\\' => {
+                Some((index, '"')) if previous.1 != '\\' => {
                     // Accept a double quote as a signal to end the string, unless the previous
                     // character was an escape.
                     //
@@ -137,20 +163,30 @@ impl<'source> Lexer<'source> {
                     let to = index + 1;
                     self.cursor = to;
 
-                    return Some(Region {
+                    return Ok(Some(Region {
                         data: Token::String,
                         position: from..to,
-                    });
+                    }));
                 }
-                Some((_, char)) => {
-                    // Assign character to "curr" and move on. We use "curr" to determine
-                    // if a double quote should be escaped.
-                    //
-                    // We are using CharIndices, so no need to keep track of the index.
-                    curr = char;
+                Some((index, char)) => {
+                    // Assign character to "previous" and move on. We use "previous" to
+                    // determine if a double quote should be escaped.
+                    previous = (index, char);
                 }
                 None => {
-                    panic!("found delimited string during lex_string");
+                    let take = if previous.0 - from > 10 {
+                        10
+                    } else {
+                        previous.0
+                    };
+                    // Unwrap should be safe due to range check above.
+                    let remaining = self.source.get(from..take);
+                    assert_ne!(remaining, None, "valid error must contain range");
+                    let message = format!(
+                        "found undelimited string: `{} ...` <- try adding `\"` ",
+                        remaining.unwrap()
+                    );
+                    return Err(Error::Lex(message));
                 }
             }
         }
@@ -173,10 +209,12 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn lex_default(&mut self, from: usize) -> Option<Region<Token>> {
-        // Find the next opening expression/block, return everything up to
-        // that point as Token::Raw.
-
+    /// Begin lexing for State::Default.
+    ///
+    /// Scans ahead until a BeginExpression or BeginBlock marker is found.
+    /// A Region containing a Token::Raw pointing to all of the text up to that marker
+    /// is returned.
+    fn lex_default(&mut self, from: usize) -> LexResult {
         // A closure which trims the bounds of the given indices and returns them
         // as a Region, with a Token::Raw embedded in the data property.
         //
@@ -185,13 +223,15 @@ impl<'source> Lexer<'source> {
             if right_trim {
                 region_end = self.source[..region_end].trim_end().len();
             }
+
             if self.left_trim {
                 self.left_trim = false;
                 let s = &self.source[region_begin..region_end];
                 region_begin = s.len() - s.trim_start().len()
             }
 
-            Some(Region::new(Token::Raw, region_begin..region_end))
+            let region = region_begin..region_end;
+            Ok(Some(Region::new(Token::Raw, region)))
         };
 
         match self.finder.find_at(self.source, from) {
@@ -214,14 +254,20 @@ impl<'source> Lexer<'source> {
                         }
                     }
                     // TODO: Proper error here instead of panic
-                    _ => panic!("unexpected token in top-level scope"),
+                    _ => {
+                        let message = format!(
+                            "unexpected token `{token}`, expected beginning\
+                            expression or beginning block",
+                        );
+                        return Err(Error::Lex(message));
+                    }
                 }
 
                 if from == marker_begin {
                     // No raw text is between our cursor and the marker, so we can
                     // skip storing it on the buffer and just return it right away.
                     self.cursor = marker_end;
-                    Some(Region::new(token, marker_begin..marker_end))
+                    Ok(Some(Region::new(token, marker_begin..marker_end)))
                 } else {
                     // Store the marker in buffer.
                     self.cursor = marker_end;
@@ -271,7 +317,7 @@ mod tests {
         let source = "lorem ipsum";
         let mut lexer = Lexer::new(source);
         let expect = Region::new(Token::Raw, 0..11);
-        assert_eq!(lexer.next(), Some(expect));
+        assert_eq!(lexer.next(), Ok(Some(expect)));
         println!("Raw: {:?}", source.get(0..11));
     }
 
@@ -280,7 +326,7 @@ mod tests {
         let source = "lorem ipsum (( dolor ...";
         let mut lexer = Lexer::new(source);
         let expect = Region::new(Token::Raw, 0..12);
-        assert_eq!(lexer.next(), Some(expect));
+        assert_eq!(lexer.next(), Ok(Some(expect)));
         // Range should contain whitespace on the right side of "ipsum".
         println!("Raw: {:?}", source.get(0..12));
     }
@@ -289,13 +335,13 @@ mod tests {
     fn test_lex_default_match_trim() {
         let source = "lorem ipsum ((- dolor ...";
         let mut lexer = Lexer::new(source);
-        assert_eq!(lexer.next(), Some(Region::new(Token::Raw, 0..11)));
+        assert_eq!(lexer.next(), Ok(Some(Region::new(Token::Raw, 0..11))));
         // Range should not contain whitespace on the right side of "ipsum".
         println!("Raw: {:?}", source.get(0..11));
     }
 
     #[test]
-    fn test_lex_default_match_state() {
+    fn test_lex_state_change() {
         let mut block_lexer = Lexer::new("lorem (*");
         let mut expression_lexer = Lexer::new("lorem ((");
         block_lexer.next();
@@ -312,61 +358,58 @@ mod tests {
                 end_token: Token::EndExpression
             }
         );
-        println!("Block lexer state: {:?}", block_lexer.state);
-        println!("Expression lexer state: {:?}", expression_lexer.state);
     }
 
     #[test]
     fn test_lex_digit() {
-        let source = "(( 10 ))";
-        let mut lexer = Lexer::new(source);
-        assert_eq!(
-            lexer.next().unwrap(),
-            Region::new(Token::BeginExpression, 0..2)
-        );
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 2..3));
-        println!("Number: {:?}", source.get(3..5));
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Number, 3..5));
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 5..6));
-        assert_eq!(
-            lexer.next().unwrap(),
-            Region::new(Token::EndExpression, 6..8)
-        );
+        let expect = vec![
+            Region::new(Token::BeginExpression, 0..2),
+            Region::new(Token::Whitespace, 2..3),
+            Region::new(Token::Number, 3..5),
+            Region::new(Token::Whitespace, 5..6),
+            Region::new(Token::EndExpression, 6..8),
+        ];
+
+        lex_next_auto("(( 10 ))", expect);
     }
 
     #[test]
     fn test_lex_ident() {
-        let source = "(( hello ))";
-        let mut lexer = Lexer::new(source);
-        assert_eq!(
-            lexer.next().unwrap(),
-            Region::new(Token::BeginExpression, 0..2)
-        );
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 2..3));
-        println!("Ident: {:?}", source.get(3..8));
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Ident, 3..8));
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 8..9));
-        assert_eq!(
-            lexer.next().unwrap(),
-            Region::new(Token::EndExpression, 9..11)
-        );
+        let expect = vec![
+            Region::new(Token::BeginExpression, 0..2),
+            Region::new(Token::Whitespace, 2..3),
+            Region::new(Token::Ident, 3..8),
+            Region::new(Token::Whitespace, 8..9),
+            Region::new(Token::EndExpression, 9..11),
+        ];
+
+        lex_next_auto("(( hello ))", expect);
     }
 
     #[test]
     fn test_lex_string() {
-        let source = "(( \"name\" ))";
+        let expect = vec![
+            Region::new(Token::BeginExpression, 0..2),
+            Region::new(Token::Whitespace, 2..3),
+            Region::new(Token::String, 3..9),
+            Region::new(Token::Whitespace, 9..10),
+            Region::new(Token::EndExpression, 10..12),
+        ];
+
+        lex_next_auto("(( \"name\" ))", expect);
+    }
+
+    /// Helper function which takes in a source string, creates a lexer on that
+    /// string and iterates [expect.len()] amount of times and compares the result
+    /// against [lexer.next()].
+    fn lex_next_auto(source: &str, expect: Vec<Region<Token>>) {
         let mut lexer = Lexer::new(source);
-        assert_eq!(
-            lexer.next().unwrap(),
-            Region::new(Token::BeginExpression, 0..2)
-        );
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 2..3));
-        println!("String: {:?}", source.get(3..9));
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::String, 3..9));
-        assert_eq!(lexer.next().unwrap(), Region::new(Token::Whitespace, 9..10));
-        assert_eq!(
-            lexer.next().unwrap(),
-            Region::new(Token::EndExpression, 10..12)
-        );
+        for i in expect {
+            assert_eq!(lexer.next(), Ok(Some(i)))
+        }
+
+        assert_eq!(lexer.next(), Ok(None));
+        assert_eq!(lexer.next(), Ok(None));
+        assert_eq!(lexer.next(), Ok(None));
     }
 }

@@ -1,8 +1,13 @@
+use crate::compile::Token;
 use std::ops::Range;
 
 pub type Result<T> = std::result::Result<T, Error>;
+pub type LexResult = Result<Option<Region<Token>>>;
 
+#[derive(Debug, PartialEq)]
 pub enum Error {
+    /// Error occurred while lexing.
+    Lex(String),
     /// Error occurred while parsing.
     Parse(String),
     /// Error occurred while rendering.
