@@ -1,4 +1,4 @@
-use super::token::Token;
+use super::token::{Keyword, Token};
 use crate::{
     types::{Error, LexResult, Region},
     SyntaxBuilder,
@@ -196,15 +196,28 @@ impl<'source> Lexer<'source> {
     where
         I: Iterator<Item = (usize, char)> + Clone,
     {
+        let check_keyword = |to: usize| {
+            let range_text = self.source.get(from..to);
+            assert_ne!(range_text, None, "valid range is required to check keyword");
+
+            match range_text.unwrap() {
+                "if" => Region::new(Token::Keyword(Keyword::If), from..to),
+                "let" => Region::new(Token::Keyword(Keyword::Let), from..to),
+                "for" => Region::new(Token::Keyword(Keyword::For), from..to),
+                "include" => Region::new(Token::Keyword(Keyword::Include), from..to),
+                _ => Region::new(Token::Ident, from..to),
+            }
+        };
+
         loop {
             match iter.next() {
                 Some((index, char)) if !is_ident_or_keyword(char) => {
                     self.cursor = index;
                     // TODO: Return Token::Keyword for special cases like "if" / "let" etc..
-                    break Region::new(Token::Ident, from..index);
+                    break check_keyword(index);
                 }
                 Some((_, _)) => continue,
-                None => break Region::new(Token::Ident, from..self.source.len()),
+                None => break check_keyword(self.source.len()),
             }
         }
     }
@@ -253,7 +266,6 @@ impl<'source> Lexer<'source> {
                             end_token: Token::EndBlock,
                         }
                     }
-                    // TODO: Proper error here instead of panic
                     _ => {
                         let message = format!(
                             "unexpected token `{token}`, expected beginning\
@@ -308,7 +320,10 @@ enum State {
 mod tests {
     use super::Lexer;
     use crate::{
-        compile::{lexer::State, token::Token},
+        compile::{
+            lexer::State,
+            token::{Keyword, Token},
+        },
         types::Region,
     };
 
@@ -384,6 +399,19 @@ mod tests {
         ];
 
         lex_next_auto("(( hello ))", expect);
+    }
+
+    #[test]
+    fn test_lex_keyword() {
+        let expect = vec![
+            Region::new(Token::BeginExpression, 0..2),
+            Region::new(Token::Whitespace, 2..3),
+            Region::new(Token::Keyword(Keyword::If), 3..5),
+            Region::new(Token::Whitespace, 5..6),
+            Region::new(Token::EndExpression, 6..8),
+        ];
+
+        lex_next_auto("(( if ))", expect);
     }
 
     #[test]
