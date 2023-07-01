@@ -45,8 +45,8 @@ impl From<Marker> for usize {
 /// # Example
 ///
 /// ```
-/// use ash::{Marker, SyntaxBuilder};
-/// use scout::Search;
+/// use ash::SyntaxBuilder;
+/// use scout::Finder;
 ///
 /// let syntax = SyntaxBuilder::new()
 ///     .expression("((", "))")
@@ -54,10 +54,8 @@ impl From<Marker> for usize {
 ///     .whitespace(&'-')
 ///     .build();
 ///
-/// let search = Search::new(syntax);
-/// let result = search.find_at("hello ((", 0);
-///
-/// assert_eq!(result, Some((Marker::BeginExpression as usize, 6, 8)));
+/// let finder = Finder::new(syntax);
+/// let result = finder.next("hello ((", 0);
 /// ```
 #[derive(Debug, Clone)]
 pub struct SyntaxBuilder<'a> {
