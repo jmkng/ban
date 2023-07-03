@@ -1,7 +1,5 @@
 use std::ops::Range;
 
-pub type Result<T> = std::result::Result<T, Error>;
-
 #[derive(Debug, PartialEq)]
 pub enum Error {
     /// Error occurred while lexing.
@@ -12,16 +10,27 @@ pub enum Error {
     Render(String),
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Region<T> {
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct Region<T: Copy + Clone> {
     /// The data contained in the Region.
     pub data: T,
     /// The beginning and ending indices of the Region.
-    pub position: Range<usize>,
+    pub begin: usize,
+    pub end: usize,
 }
 
-impl<T> Region<T> {
+impl<T: Copy + Clone> Into<Range<usize>> for Region<T> {
+    fn into(self) -> Range<usize> {
+        self.begin..self.end
+    }
+}
+
+impl<T: Copy + Clone> Region<T> {
     pub fn new(data: T, position: Range<usize>) -> Self {
-        Self { data, position }
+        Self {
+            data,
+            begin: position.start,
+            end: position.end,
+        }
     }
 }

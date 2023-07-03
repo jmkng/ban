@@ -1,7 +1,7 @@
 use crate::Marker;
 use std::fmt::Display;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Token {
     /// Raw text.
     Raw,
@@ -68,7 +68,7 @@ impl Display for Token {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Keyword {
     If,
     Let,
@@ -93,7 +93,7 @@ impl Display for Keyword {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Operator {
     /// +
     Add,

@@ -1,12 +1,10 @@
-use self::{lexer::Token, parser::Parser, template::Template};
-use crate::types::{Region, Result};
+use self::{parser::Parser, template::Template};
+use crate::types::Error;
 
 mod lexer;
 mod parser;
 mod template;
 
-pub type LexResult = Result<Option<Region<Token>>>;
-
-pub fn compile<'source>(text: &'source str) -> Result<Template> {
+pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
     Parser::new(text).compile()
 }

@@ -1,6 +1,20 @@
-use self::{state::State, token::Operator};
+//! Ash lexer.
+//!
+//! Receives a reference to some external string and provides methods to produce
+//! instances of Region, which describe the type and location of tokens within
+//! the source.
+//!
+//! The lexer is designed to be embedded within the parser, rather than used on
+//! its own.
+//!
+//! &str -> Vec<Region> -> Template -> String
+//! -------------------
+mod state;
+mod token;
 
-use super::LexResult;
+pub use token::Token;
+
+use self::{state::State, token::Operator};
 use crate::{
     compile::lexer::token::Keyword,
     types::{Error, Region},
@@ -8,10 +22,7 @@ use crate::{
 };
 use scout::Finder;
 
-pub use token::Token;
-
-mod state;
-mod token;
+pub type LexResult = Result<Option<Region<Token>>, Error>;
 
 pub struct Lexer<'source> {
     /// Utility for searching text for patterns.
@@ -73,8 +84,9 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex the next token, and behave as though the lexer is inside of a tag,
-    /// which could be either an expression or block.
+    /// Lex the next token, behaving as though the cursor is inside of a tag.
+    ///
+    /// Tag is a general term which can mean either block or expression.
     fn lex_tag(&mut self, from: usize) -> LexResult {
         match self.finder.starts(self.source, from) {
             Some((id, length)) => {
@@ -121,7 +133,8 @@ impl<'source> Lexer<'source> {
 
                     Ok(Some(Region {
                         data,
-                        position: from..from + length,
+                        begin: from,
+                        end: from + length,
                     }))
                 };
 
@@ -172,7 +185,16 @@ impl<'source> Lexer<'source> {
             ('>', Some((usize, '='))) => (usize, Operator::GreaterOrEqual),
             ('<', Some((usize, '='))) => (usize, Operator::LesserOrEqual),
             ('=', Some(_)) | ('=', None) => (from, Operator::Assign),
-            _ => return Err(Error::Lex("asdfasd".into())),
+            c if c.1.is_some() => {
+                return Err(Error::Lex(
+                    format!("unrecognized operators `{:?}{:?}`", previous, c.1).into(),
+                ))
+            }
+            _ => {
+                return Err(Error::Lex(
+                    format!("unrecognized operator `{:?}`", previous).into(),
+                ))
+            }
         };
         let position = position + 1;
 
@@ -233,7 +255,8 @@ impl<'source> Lexer<'source> {
 
                     return Ok(Some(Region {
                         data: Token::String,
-                        position: from..to,
+                        begin: from,
+                        end: to,
                     }));
                 }
                 Some((index, char)) => {
@@ -285,7 +308,6 @@ impl<'source> Lexer<'source> {
         loop {
             match iter.next() {
                 Some((index, char)) if !is_ident_or_keyword(char) => {
-                    // TODO: Return Token::Keyword for special cases like "if" / "let" etc..
                     break check_keyword(index);
                 }
                 Some((_, _)) => continue,
@@ -376,7 +398,7 @@ fn is_ident_or_keyword(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::read_to_string, path::PathBuf};
+    use std::fs::read_to_string;
 
     use super::{
         token::{Keyword, Operator},
@@ -484,7 +506,7 @@ mod tests {
 
     #[test]
     fn test_lex_full_document() {
-        let source = read_to_string(PathBuf::from("tests/template.html")).unwrap();
+        let source = read_to_string("tests/template.html").unwrap();
         let expect = vec![
             Region::new(Token::Raw, 0..196),
             Region::new(Token::BeginExpression, 196..198),
