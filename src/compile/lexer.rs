@@ -24,6 +24,12 @@ use scout::Finder;
 
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
 
+macro_rules! lex_error {
+    ($fmt:expr $(, $($args:expr),*)?) => {
+        Err(Error::Lex(format!($fmt $(, $($args),*)?)))
+    };
+}
+
 pub struct Lexer<'source> {
     /// Utility for searching text for patterns.
     finder: Finder<&'source str>,
@@ -63,12 +69,12 @@ impl<'source> Lexer<'source> {
             if let Some(next) = self.buffer.take() {
                 return Ok(Some(next));
             }
-
             if self.source[self.cursor..].is_empty() {
                 return Ok(None);
             }
 
             let c = self.cursor;
+
             let result = match self.state {
                 State::Default => self.lex_default(c),
                 State::Tag { .. } => self.lex_tag(c),
@@ -93,11 +99,12 @@ impl<'source> Lexer<'source> {
                 let (token, is_trimmed) = Token::from_usize_trim(id);
                 match self.state {
                     State::Tag { ref end_token } => {
-                        // Matching end.
+                        // Matching token.
                         if token == *end_token {
                             self.state = State::Default;
                             self.left_trim = is_trimmed;
                             self.cursor = length;
+
                             return Ok(Some((token, (from..length).into())));
                         } else {
                             let which = if *end_token == Token::EndExpression {
@@ -107,15 +114,14 @@ impl<'source> Lexer<'source> {
                             };
 
                             let range = self.source.get(from..length);
-                            assert_ne!(range, None, "valid error must contain range");
 
-                            let message = format!(
-                                "unexpected token `{token}` found at {}, \
-                                have you closed the {which} with `{end_token}`?",
-                                range.unwrap()
+                            return lex_error!(
+                                "unexpected token `{}` found at {}, have you closed the {} with `{}`?",
+                                token,
+                                range.expect("valid error must contain range"),
+                                which,
+                                end_token
                             );
-
-                            return Err(Error::Lex(message));
                         }
                     }
                     _ => panic!("unexpected state for lex_tag"),
@@ -124,35 +130,36 @@ impl<'source> Lexer<'source> {
             None => {
                 // An iterator over the remaining source, with the index adjusted to match the
                 // true position based on our "from" parameter.
-                let mut iterator = self.source[from..]
+                let mut i = self.source[from..]
                     .char_indices()
                     .map(|(d, c)| (from + d, c));
 
-                let mut get_region = |length: usize, data: Token| {
+                let mut advance = |length: usize, data: Token| {
                     self.cursor += length;
-
                     Ok(Some((data, (from..from + length).into())))
                 };
 
-                let (index, char) = iterator.next().unwrap();
+                let (index, char) = i.next().unwrap();
 
-                return match char {
-                    '*' => get_region(1, Token::Operator(Operator::Multiply)),
-                    '+' => get_region(1, Token::Operator(Operator::Add)),
-                    '/' => get_region(1, Token::Operator(Operator::Divide)),
-                    '-' => get_region(1, Token::Operator(Operator::Subtract)),
-                    '=' | '!' | '>' | '<' => self.lex_operator(iterator, index, char),
-                    c if c.is_whitespace() => Ok(Some(self.lex_whitespace(iterator, index))),
-                    c if c.is_ascii_digit() => Ok(Some(self.lex_digit(iterator, index))),
-                    c if is_ident_or_keyword(c) => {
-                        Ok(Some(self.lex_ident_or_keyword(iterator, index)))
-                    }
-                    '"' => self.lex_string(iterator, index),
-                    '.' => get_region(1, Token::Period),
-                    _ => Err(Error::Lex(format!(
-                        "encountered unexpected character `{char}`"
-                    ))),
-                };
+                match char {
+                    '*' => advance(1, Token::Operator(Operator::Multiply)),
+                    '+' => advance(1, Token::Operator(Operator::Add)),
+                    '/' => advance(1, Token::Operator(Operator::Divide)),
+                    '-' => advance(1, Token::Operator(Operator::Subtract)),
+                    '.' => advance(1, Token::Period),
+
+                    c if c.is_whitespace() => Ok(Some(self.lex_whitespace(i, index))),
+                    c if c.is_ascii_digit() => Ok(Some(self.lex_digit(i, index))),
+                    c if is_ident_or_keyword(c) => Ok(Some(self.lex_ident_or_keyword(i, index))),
+
+                    '"' => self.lex_string(i, index),
+
+                    // These operators may have a secondary character to them. ("==" | "!=", etc)
+                    // lex_operator will handle it.
+                    '=' | '!' | '>' | '<' => self.lex_operator(i, index, char),
+
+                    _ => lex_error!("encountered unexpected character `{}`", char),
+                }
             }
         }
     }
@@ -182,15 +189,9 @@ impl<'source> Lexer<'source> {
             ('<', Some((usize, '='))) => (usize, Operator::LesserOrEqual),
             ('=', Some(_)) | ('=', None) => (from, Operator::Assign),
             c if c.1.is_some() => {
-                return Err(Error::Lex(
-                    format!("unrecognized operators `{:?}{:?}`", previous, c.1).into(),
-                ))
+                return lex_error!("unrecognized operators `{}{}`", previous, c.1.unwrap().1)
             }
-            _ => {
-                return Err(Error::Lex(
-                    format!("unrecognized operator `{:?}`", previous).into(),
-                ))
-            }
+            _ => return lex_error!("unrecognized operator `{}`", previous),
         };
         let position = position + 1;
 
@@ -262,14 +263,16 @@ impl<'source> Lexer<'source> {
                     } else {
                         previous.0
                     };
-                    // Unwrap should be safe due to range check above.
-                    let remaining = self.source.get(from..take);
-                    assert_ne!(remaining, None, "valid error must contain range");
-                    let message = format!(
-                        "found undelimited string: `{} ...` <- try adding `\"` ",
-                        remaining.unwrap()
+
+                    let remaining = self
+                        .source
+                        .get(from..take)
+                        .expect("valid error must contain range");
+
+                    return lex_error!(
+                        "found undelimited string: `{} ...` <- try adding `\"`",
+                        remaining
                     );
-                    return Err(Error::Lex(message));
                 }
             }
         }
@@ -281,10 +284,12 @@ impl<'source> Lexer<'source> {
         T: Iterator<Item = (usize, char)>,
     {
         let mut check_keyword = |to: usize| {
-            let range_text = self.source.get(from..to);
-            assert_ne!(range_text, None, "valid range is required to check keyword");
+            let range_text = self
+                .source
+                .get(from..to)
+                .expect("valid range is required to check keyword");
 
-            let token = match range_text.unwrap().to_lowercase().as_str() {
+            let token = match range_text.to_lowercase().as_str() {
                 "if" => Token::Keyword(Keyword::If),
                 "let" => Token::Keyword(Keyword::Let),
                 "for" => Token::Keyword(Keyword::For),
@@ -292,6 +297,7 @@ impl<'source> Lexer<'source> {
                 "include" => Token::Keyword(Keyword::Include),
                 "endfor" => Token::Keyword(Keyword::EndFor),
                 "endif" => Token::Keyword(Keyword::EndIf),
+
                 _ => Token::Ident,
             };
 
@@ -350,11 +356,10 @@ impl<'source> Lexer<'source> {
                         }
                     }
                     _ => {
-                        let message = format!(
-                            "unexpected token `{token}`, expected beginning\
-                            expression or beginning block",
+                        return lex_error!(
+                            "unexpected token `{}`, expected beginning expression or beginning block",
+                            token
                         );
-                        return Err(Error::Lex(message));
                     }
                 }
 
