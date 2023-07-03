@@ -1,4 +1,4 @@
-use self::state::State;
+use self::{state::State, token::Operator};
 
 use super::LexResult;
 use crate::{
@@ -116,22 +116,68 @@ impl<'source> Lexer<'source> {
                     .char_indices()
                     .map(|(d, c)| (from + d, c));
 
+                let mut get_region = |length: usize, data: Token| {
+                    self.cursor += length;
+
+                    Ok(Some(Region {
+                        data,
+                        position: from..from + length,
+                    }))
+                };
+
                 let (index, char) = iterator.next().unwrap();
+
                 return match char {
-                    '"' => self.lex_string(iterator, index),
+                    '*' => get_region(1, Token::Operator(Operator::Multiply)),
+                    '+' => get_region(1, Token::Operator(Operator::Add)),
+                    '/' => get_region(1, Token::Operator(Operator::Divide)),
+                    '-' => get_region(1, Token::Operator(Operator::Subtract)),
+                    '=' | '!' | '>' | '<' => self.lex_operator(iterator, index, char),
                     c if c.is_whitespace() => Ok(Some(self.lex_whitespace(iterator, index))),
                     c if c.is_ascii_digit() => Ok(Some(self.lex_digit(iterator, index))),
                     c if is_ident_or_keyword(c) => {
                         Ok(Some(self.lex_ident_or_keyword(iterator, index)))
                     }
-                    // TODO: temporary error message, should be made more useful as
-                    // implementation grows.
+                    '"' => self.lex_string(iterator, index),
+                    '.' => get_region(1, Token::Period),
                     _ => Err(Error::Lex(format!(
                         "encountered unexpected character `{char}`"
                     ))),
                 };
             }
         }
+    }
+
+    /// Lex a Region containing a Token::Operator.
+    ///
+    /// This function will catch and return these types, but return an error if one of
+    /// the patterns is not matched.
+    ///
+    /// Assign: =
+    ///
+    /// Equal: ==
+    ///
+    /// Not Equal: !=
+    ///
+    /// Greater Or Equal: >=
+    ///
+    /// Lesser Or Equal: <=
+    fn lex_operator<T>(&mut self, mut iter: T, from: usize, previous: char) -> LexResult
+    where
+        T: Iterator<Item = (usize, char)>,
+    {
+        let (position, operator) = match (previous, iter.next()) {
+            ('=', Some((usize, '='))) => (usize, Operator::Equal),
+            ('!', Some((usize, '='))) => (usize, Operator::NotEqual),
+            ('>', Some((usize, '='))) => (usize, Operator::GreaterOrEqual),
+            ('<', Some((usize, '='))) => (usize, Operator::LesserOrEqual),
+            ('=', Some(_)) | ('=', None) => (from, Operator::Assign),
+            _ => return Err(Error::Lex("asdfasd".into())),
+        };
+        let position = position + 1;
+
+        self.cursor = position;
+        Ok(Some(Region::new(Token::Operator(operator), from..position)))
     }
 
     /// Lex a Region containing a Token::Number.
@@ -228,7 +274,10 @@ impl<'source> Lexer<'source> {
                 "if" => Region::new(Token::Keyword(Keyword::If), from..to),
                 "let" => Region::new(Token::Keyword(Keyword::Let), from..to),
                 "for" => Region::new(Token::Keyword(Keyword::For), from..to),
+                "in" => Region::new(Token::Keyword(Keyword::In), from..to),
                 "include" => Region::new(Token::Keyword(Keyword::Include), from..to),
+                "endfor" => Region::new(Token::Keyword(Keyword::EndFor), from..to),
+                "endif" => Region::new(Token::Keyword(Keyword::EndIf), from..to),
                 _ => Region::new(Token::Ident, from..to),
             }
         };
@@ -327,7 +376,12 @@ fn is_ident_or_keyword(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{token::Keyword, Lexer};
+    use std::fs::read_to_string;
+
+    use super::{
+        token::{Keyword, Operator},
+        Lexer,
+    };
     use crate::{
         compile::lexer::{State, Token},
         types::{Error, Region},
@@ -429,6 +483,147 @@ mod tests {
     }
 
     #[test]
+    fn test_lex_full_document() {
+        let source = read_to_string("tests/template.html").unwrap();
+        let expect = vec![
+            Region {
+                data: Token::Raw,
+                position: 0..196,
+            },
+            Region {
+                data: Token::BeginExpression,
+                position: 196..198,
+            },
+            Region {
+                data: Token::Ident,
+                position: 199..203,
+            },
+            Region {
+                data: Token::EndExpression,
+                position: 204..206,
+            },
+            Region {
+                data: Token::Raw,
+                position: 206..212,
+            },
+            Region {
+                data: Token::BeginBlock,
+                position: 212..214,
+            },
+            Region {
+                data: Token::Keyword(Keyword::For),
+                position: 215..218,
+            },
+            Region {
+                data: Token::Ident,
+                position: 219..225,
+            },
+            Region {
+                data: Token::Keyword(Keyword::In),
+                position: 226..228,
+            },
+            Region {
+                data: Token::Ident,
+                position: 229..235,
+            },
+            Region {
+                data: Token::EndBlock,
+                position: 236..238,
+            },
+            Region {
+                data: Token::Raw,
+                position: 238..247,
+            },
+            Region {
+                data: Token::BeginExpression,
+                position: 247..249,
+            },
+            Region {
+                data: Token::Ident,
+                position: 250..256,
+            },
+            Region {
+                data: Token::Period,
+                position: 256..257,
+            },
+            Region {
+                data: Token::Ident,
+                position: 257..261,
+            },
+            Region {
+                data: Token::EndExpression,
+                position: 262..264,
+            },
+            Region {
+                data: Token::Raw,
+                position: 264..269,
+            },
+            Region {
+                data: Token::BeginBlock,
+                position: 269..271,
+            },
+            Region {
+                data: Token::Keyword(Keyword::EndFor),
+                position: 272..278,
+            },
+            Region {
+                data: Token::EndBlock,
+                position: 279..281,
+            },
+            Region {
+                data: Token::Raw,
+                position: 281..287,
+            },
+            Region {
+                data: Token::BeginBlock,
+                position: 287..289,
+            },
+            Region {
+                data: Token::Keyword(Keyword::If),
+                position: 290..292,
+            },
+            Region {
+                data: Token::Ident,
+                position: 293..297,
+            },
+            Region {
+                data: Token::Operator(Operator::Equal),
+                position: 298..300,
+            },
+            Region {
+                data: Token::String,
+                position: 301..309,
+            },
+            Region {
+                data: Token::EndBlock,
+                position: 310..312,
+            },
+            Region {
+                data: Token::Raw,
+                position: 312..347,
+            },
+            Region {
+                data: Token::BeginBlock,
+                position: 347..349,
+            },
+            Region {
+                data: Token::Keyword(Keyword::EndFor),
+                position: 350..356,
+            },
+            Region {
+                data: Token::EndBlock,
+                position: 357..359,
+            },
+            Region {
+                data: Token::Raw,
+                position: 359..375,
+            },
+        ];
+
+        lex_next_auto(&source, expect)
+    }
+
+    #[test]
     fn test_lex_string() {
         let expect = vec![
             Region::new(Token::BeginExpression, 0..2),
@@ -445,9 +640,7 @@ mod tests {
     fn lex_next_auto(source: &str, expect: Vec<Region<Token>>) {
         let mut lexer = Lexer::new(source);
         for i in expect {
-            let next = lexer.next();
-            let actual = i;
-            assert_eq!(next, Ok(Some(actual)))
+            assert_eq!(lexer.next(), Ok(Some(i)))
         }
 
         assert_eq!(lexer.next(), Ok(None));

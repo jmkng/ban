@@ -21,10 +21,12 @@ pub enum Token {
     BeginBlock,
     /// End of a block - *) by default.
     EndBlock,
+    /// .
+    Period,
     /// A recognized "special" keyword that begins a certain type of block.
     Keyword(Keyword),
-    /// A dummy no-op token type.
-    Dummy,
+    ///
+    Operator(Operator),
 }
 
 impl Token {
@@ -46,12 +48,6 @@ impl Token {
     }
 }
 
-impl Default for Token {
-    fn default() -> Self {
-        Token::Dummy
-    }
-}
-
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -65,8 +61,9 @@ impl Display for Token {
             Token::EndExpression => write!(f, "end expression"),
             Token::BeginBlock => write!(f, "begin block"),
             Token::EndBlock => write!(f, "end block"),
+            Token::Period => write!(f, "."),
             Token::Keyword(keyword) => write!(f, "keyword {}", keyword),
-            Token::Dummy => write!(f, "{}", "dummy"),
+            Token::Operator(operator) => write!(f, "oeprator {}", operator),
         }
     }
 }
@@ -76,7 +73,10 @@ pub enum Keyword {
     If,
     Let,
     For,
+    In,
     Include,
+    EndFor,
+    EndIf,
 }
 
 impl Display for Keyword {
@@ -86,6 +86,47 @@ impl Display for Keyword {
             Keyword::Let => write!(f, "let"),
             Keyword::For => write!(f, "for"),
             Keyword::Include => write!(f, "include"),
+            Keyword::In => write!(f, "in"),
+            Keyword::EndFor => write!(f, "endfor"),
+            Keyword::EndIf => write!(f, "endif"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Operator {
+    /// +
+    Add,
+    /// -
+    Subtract,
+    /// *
+    Multiply,
+    /// /
+    Divide,
+    /// =
+    Assign,
+    /// ==
+    Equal,
+    /// !=
+    NotEqual,
+    /// >=
+    GreaterOrEqual,
+    /// <=
+    LesserOrEqual,
+}
+
+impl Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operator::Add => write!(f, "add (+)"),
+            Operator::Subtract => write!(f, "subtract (-)"),
+            Operator::Multiply => write!(f, "multiply (*)"),
+            Operator::Divide => write!(f, "divide (/)"),
+            Operator::Assign => write!(f, "assign (=)"),
+            Operator::Equal => write!(f, "equal (==)"),
+            Operator::NotEqual => write!(f, "not equal (!=)"),
+            Operator::GreaterOrEqual => write!(f, "greater or equal (>=)"),
+            Operator::LesserOrEqual => write!(f, "lesser or equal (<=)"),
         }
     }
 }
