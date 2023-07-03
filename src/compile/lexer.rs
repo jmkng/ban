@@ -376,7 +376,7 @@ fn is_ident_or_keyword(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::read_to_string;
+    use std::{fs::read_to_string, path::PathBuf};
 
     use super::{
         token::{Keyword, Operator},
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_lex_full_document() {
-        let source = read_to_string("tests/template.html").unwrap();
+        let source = read_to_string(PathBuf::from("tests/template.html")).unwrap();
         let expect = vec![
             Region::new(Token::Raw, 0..196),
             Region::new(Token::BeginExpression, 196..198),
