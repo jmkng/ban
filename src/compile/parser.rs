@@ -16,7 +16,7 @@ use crate::types::{Error, Region};
 use lexer::Token as LexerToken;
 use token::Token as ParserToken;
 
-type ParseResult = Region<ParserToken>;
+type ParseResult = Result<(ParserToken, Region), Error>;
 
 pub struct Parser<'source> {
     /// Lexer used to pull from source as tokens instead of raw text.
@@ -24,7 +24,7 @@ pub struct Parser<'source> {
     /// Store peeked tokens.
     ///
     /// Double option is used to remember when the next token is None.
-    buffer: Option<Option<Region<LexerToken>>>,
+    buffer: Option<Option<(LexerToken, Region)>>,
 }
 
 impl<'source> Parser<'source> {
@@ -38,12 +38,12 @@ impl<'source> Parser<'source> {
     pub fn compile(mut self) -> Result<Template<'source>, Error> {
         let mut regions = vec![];
 
-        while let Some(next) = self.next()? {
+        while let Some((token, region)) = self.next()? {
             // Translate incoming Lexer::Token instances to Parser::Token.
-            let region = match next.data {
-                lexer::Token::Raw => Region::new(ParserToken::Raw, next.begin..next.end),
-                lexer::Token::BeginExpression => self.parse_expression(next.begin),
-                lexer::Token::BeginBlock => self.parse_block(next.begin),
+            let region: ParseResult = match token {
+                lexer::Token::Raw => Ok((ParserToken::Raw, (region.begin..region.end).into())),
+                lexer::Token::BeginExpression => self.parse_expression(region.begin),
+                lexer::Token::BeginBlock => self.parse_block(region.begin),
                 _ => panic!("unrecognized token surfaced in parser.compile"),
             };
 
@@ -94,14 +94,14 @@ impl<'source> Parser<'source> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{compile::lexer::Token, types::Region};
+    use crate::compile::lexer::Token;
 
     use super::Parser;
 
     #[test]
     fn test_parser_lexer_integration() {
         let mut parser = Parser::new("hello");
-        assert_eq!(parser.next(), Ok(Some(Region::new(Token::Raw, 0..5))));
+        assert_eq!(parser.next(), Ok(Some((Token::Raw, (0..5).into()))));
         assert_eq!(parser.next(), Ok(None));
     }
 }

@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+/// Ash error type.
 #[derive(Debug, PartialEq)]
 pub enum Error {
     /// Error occurred while lexing.
@@ -10,27 +11,38 @@ pub enum Error {
     Render(String),
 }
 
+/// Represents a region (beginning and ending indices) within some source.
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub struct Region<T: Copy + Clone> {
-    /// The data contained in the Region.
-    pub data: T,
-    /// The beginning and ending indices of the Region.
+pub struct Region {
+    /// The beginning of the range, inclusive.
     pub begin: usize,
+    /// The ending of the range, exclusive.
     pub end: usize,
 }
 
-impl<T: Copy + Clone> Into<Range<usize>> for Region<T> {
-    fn into(self) -> Range<usize> {
-        self.begin..self.end
+impl Region {
+    pub fn new(position: Range<usize>) -> Self {
+        Self {
+            begin: position.start,
+            end: position.end,
+        }
     }
 }
 
-impl<T: Copy + Clone> Region<T> {
-    pub fn new(data: T, position: Range<usize>) -> Self {
+impl From<Range<usize>> for Region {
+    fn from(value: Range<usize>) -> Self {
         Self {
-            data,
-            begin: position.start,
-            end: position.end,
+            begin: value.start,
+            end: value.end,
+        }
+    }
+}
+
+impl From<Region> for Range<usize> {
+    fn from(value: Region) -> Self {
+        Self {
+            start: value.begin,
+            end: value.end,
         }
     }
 }
