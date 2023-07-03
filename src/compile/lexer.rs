@@ -486,138 +486,39 @@ mod tests {
     fn test_lex_full_document() {
         let source = read_to_string("tests/template.html").unwrap();
         let expect = vec![
-            Region {
-                data: Token::Raw,
-                position: 0..196,
-            },
-            Region {
-                data: Token::BeginExpression,
-                position: 196..198,
-            },
-            Region {
-                data: Token::Ident,
-                position: 199..203,
-            },
-            Region {
-                data: Token::EndExpression,
-                position: 204..206,
-            },
-            Region {
-                data: Token::Raw,
-                position: 206..212,
-            },
-            Region {
-                data: Token::BeginBlock,
-                position: 212..214,
-            },
-            Region {
-                data: Token::Keyword(Keyword::For),
-                position: 215..218,
-            },
-            Region {
-                data: Token::Ident,
-                position: 219..225,
-            },
-            Region {
-                data: Token::Keyword(Keyword::In),
-                position: 226..228,
-            },
-            Region {
-                data: Token::Ident,
-                position: 229..235,
-            },
-            Region {
-                data: Token::EndBlock,
-                position: 236..238,
-            },
-            Region {
-                data: Token::Raw,
-                position: 238..247,
-            },
-            Region {
-                data: Token::BeginExpression,
-                position: 247..249,
-            },
-            Region {
-                data: Token::Ident,
-                position: 250..256,
-            },
-            Region {
-                data: Token::Period,
-                position: 256..257,
-            },
-            Region {
-                data: Token::Ident,
-                position: 257..261,
-            },
-            Region {
-                data: Token::EndExpression,
-                position: 262..264,
-            },
-            Region {
-                data: Token::Raw,
-                position: 264..269,
-            },
-            Region {
-                data: Token::BeginBlock,
-                position: 269..271,
-            },
-            Region {
-                data: Token::Keyword(Keyword::EndFor),
-                position: 272..278,
-            },
-            Region {
-                data: Token::EndBlock,
-                position: 279..281,
-            },
-            Region {
-                data: Token::Raw,
-                position: 281..287,
-            },
-            Region {
-                data: Token::BeginBlock,
-                position: 287..289,
-            },
-            Region {
-                data: Token::Keyword(Keyword::If),
-                position: 290..292,
-            },
-            Region {
-                data: Token::Ident,
-                position: 293..297,
-            },
-            Region {
-                data: Token::Operator(Operator::Equal),
-                position: 298..300,
-            },
-            Region {
-                data: Token::String,
-                position: 301..309,
-            },
-            Region {
-                data: Token::EndBlock,
-                position: 310..312,
-            },
-            Region {
-                data: Token::Raw,
-                position: 312..347,
-            },
-            Region {
-                data: Token::BeginBlock,
-                position: 347..349,
-            },
-            Region {
-                data: Token::Keyword(Keyword::EndFor),
-                position: 350..356,
-            },
-            Region {
-                data: Token::EndBlock,
-                position: 357..359,
-            },
-            Region {
-                data: Token::Raw,
-                position: 359..375,
-            },
+            Region::new(Token::Raw, 0..196),
+            Region::new(Token::BeginExpression, 196..198),
+            Region::new(Token::Ident, 199..203),
+            Region::new(Token::EndExpression, 204..206),
+            Region::new(Token::Raw, 206..212),
+            Region::new(Token::BeginBlock, 212..214),
+            Region::new(Token::Keyword(Keyword::For), 215..218),
+            Region::new(Token::Ident, 219..225),
+            Region::new(Token::Keyword(Keyword::In), 226..228),
+            Region::new(Token::Ident, 229..235),
+            Region::new(Token::EndBlock, 236..238),
+            Region::new(Token::Raw, 238..247),
+            Region::new(Token::BeginExpression, 247..249),
+            Region::new(Token::Ident, 250..256),
+            Region::new(Token::Period, 256..257),
+            Region::new(Token::Ident, 257..261),
+            Region::new(Token::EndExpression, 262..264),
+            Region::new(Token::Raw, 264..269),
+            Region::new(Token::BeginBlock, 269..271),
+            Region::new(Token::Keyword(Keyword::EndFor), 272..278),
+            Region::new(Token::EndBlock, 279..281),
+            Region::new(Token::Raw, 281..287),
+            Region::new(Token::BeginBlock, 287..289),
+            Region::new(Token::Keyword(Keyword::If), 290..292),
+            Region::new(Token::Ident, 293..297),
+            Region::new(Token::Operator(Operator::Equal), 298..300),
+            Region::new(Token::String, 301..309),
+            Region::new(Token::EndBlock, 310..312),
+            Region::new(Token::Raw, 312..347),
+            Region::new(Token::BeginBlock, 347..349),
+            Region::new(Token::Keyword(Keyword::EndFor), 350..356),
+            Region::new(Token::EndBlock, 357..359),
+            Region::new(Token::Raw, 359..375),
         ];
 
         lex_next_auto(&source, expect)
