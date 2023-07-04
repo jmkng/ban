@@ -24,9 +24,9 @@ use scout::Finder;
 
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
 
-macro_rules! lex_error {
+macro_rules! general_error {
     ($fmt:expr $(, $($args:expr),*)?) => {
-        Err(Error::Lex(format!($fmt $(, $($args),*)?)))
+        Err(Error::General(format!($fmt $(, $($args),*)?)))
     };
 }
 
@@ -97,6 +97,7 @@ impl<'source> Lexer<'source> {
         match self.finder.starts(self.source, from) {
             Some((id, length)) => {
                 let (token, is_trimmed) = Token::from_usize_trim(id);
+
                 match self.state {
                     State::Tag { ref end_token } => {
                         // Matching token.
@@ -113,14 +114,13 @@ impl<'source> Lexer<'source> {
                                 "block"
                             };
 
-                            let range = self.source.get(from..length);
-
-                            return lex_error!(
-                                "unexpected token `{}` found at {}, have you closed the {} with `{}`?",
+                            let position = self.get_position();
+                            return general_error!(
+                                "unexpected token `{}` found at line {} character {}, have you closed the previous {}?",
                                 token,
-                                range.expect("valid error must contain range"),
-                                which,
-                                end_token
+                                position.0,
+                                position.1,
+                                which
                             );
                         }
                     }
@@ -158,7 +158,7 @@ impl<'source> Lexer<'source> {
                     // lex_operator will handle it.
                     '=' | '!' | '>' | '<' => self.lex_operator(i, index, char),
 
-                    _ => lex_error!("encountered unexpected character `{}`", char),
+                    _ => general_error!("encountered unexpected character `{}`", char),
                 }
             }
         }
@@ -189,9 +189,9 @@ impl<'source> Lexer<'source> {
             ('<', Some((usize, '='))) => (usize, Operator::LesserOrEqual),
             ('=', Some(_)) | ('=', None) => (from, Operator::Assign),
             c if c.1.is_some() => {
-                return lex_error!("unrecognized operators `{}{}`", previous, c.1.unwrap().1)
+                return general_error!("unrecognized operators `{}{}`", previous, c.1.unwrap().1)
             }
-            _ => return lex_error!("unrecognized operator `{}`", previous),
+            _ => return general_error!("unrecognized operator `{}`", previous),
         };
         let position = position + 1;
 
@@ -208,6 +208,7 @@ impl<'source> Lexer<'source> {
             match iter.next() {
                 Some((index, char)) if !char.is_ascii_digit() => {
                     self.cursor = index;
+
                     break (Token::Number, (from..index).into());
                 }
                 Some((_, _)) => continue,
@@ -225,6 +226,7 @@ impl<'source> Lexer<'source> {
             match iter.next() {
                 Some((index, char)) if !char.is_whitespace() => {
                     self.cursor = index;
+
                     break (Token::Whitespace, (from..index).into());
                 }
                 Some((_, _)) => continue,
@@ -269,7 +271,7 @@ impl<'source> Lexer<'source> {
                         .get(from..take)
                         .expect("valid error must contain range");
 
-                    return lex_error!(
+                    return general_error!(
                         "found undelimited string: `{} ...` <- try adding `\"`",
                         remaining
                     );
@@ -300,8 +302,8 @@ impl<'source> Lexer<'source> {
 
                 _ => Token::Ident,
             };
-
             self.cursor = to;
+
             (token, (from..to).into())
         };
 
@@ -356,7 +358,7 @@ impl<'source> Lexer<'source> {
                         }
                     }
                     _ => {
-                        return lex_error!(
+                        return general_error!(
                             "unexpected token `{}`, expected beginning expression or beginning block",
                             token
                         );
@@ -367,6 +369,7 @@ impl<'source> Lexer<'source> {
                     // No raw text is between our cursor and the marker, so we can
                     // skip storing it on the buffer and just return it right away.
                     self.cursor = marker_end;
+
                     Ok(Some((token, (marker_begin..marker_end).into())))
                 } else {
                     // Store the marker in buffer.
@@ -387,6 +390,51 @@ impl<'source> Lexer<'source> {
             }
         }
     }
+
+    /// Get the line and column numbers based on the Lexer position.
+    fn get_position(&self) -> (usize, usize) {
+        (
+            calc_line_number(self.source, self.cursor),
+            calc_column_number(self.source, self.cursor),
+        )
+    }
+}
+
+/// Determine the amount of newlines that exist in the given source from the beginning
+/// (0) up to the given index.
+fn calc_line_number(source: &str, index: usize) -> usize {
+    let mut line = 1;
+
+    let window = source
+        .get(..index)
+        .expect("getting window for line calculation should not fail");
+
+    for i in window.chars() {
+        if i == '\n' {
+            line += 1;
+        }
+    }
+
+    return line;
+}
+
+/// Determine the amount of characters that exist between the given index and the
+/// closest newline.
+fn calc_column_number(source: &str, index: usize) -> usize {
+    let window = source
+        .get(..index)
+        .expect("getting window for column calculation should not fail");
+
+    let mut chars = 1;
+    let mut iterator = window.chars().rev();
+    while let Some(c) = iterator.next() {
+        if c == '\n' {
+            break;
+        }
+        chars += 1;
+    }
+
+    chars
 }
 
 /// Checks if the char is a recognized ident/keyword character.
@@ -396,16 +444,33 @@ fn is_ident_or_keyword(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::read_to_string;
-
     use super::{
         token::{Keyword, Operator},
         Lexer,
     };
     use crate::{
-        compile::lexer::{State, Token},
+        compile::lexer::{calc_column_number, calc_line_number, State, Token},
         types::{Error, Region},
     };
+    use std::fs::read_to_string;
+
+    #[test]
+    fn test_calc_line_number() {
+        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 4), 1);
+        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 5), 1);
+        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 6), 1);
+        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 7), 2);
+        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 13), 3);
+    }
+
+    #[test]
+    fn test_calc_column_number() {
+        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 6), 7);
+        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 9), 3);
+        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 12), 6);
+        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 13), 1);
+        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 15), 3);
+    }
 
     #[test]
     fn test_lex_default_no_match() {
@@ -550,6 +615,26 @@ mod tests {
         ];
 
         lex_next_auto("(( \"name\" ))", expect);
+    }
+
+    #[test]
+    fn test_error_multiple_opening_tags() {
+        let expect = vec![
+            (Token::Raw, 0..6),
+            (Token::BeginExpression, 6..8),
+            (Token::Ident, 9..13),
+        ];
+        let mut lexer = Lexer::new("hello (( name (( ))");
+        // Expecting error, so cannot use lex_next_auto
+        for (token, range) in expect {
+            assert_eq!(lexer.next(), Ok(Some((token, range.into()))))
+        }
+        let next = lexer
+            .next()
+            .expect_err("should receive err with overlapping tags");
+
+        assert_eq!(next.to_string(), "unexpected token `begin expression` found at line 1 character 15, have you closed the previous expression?");
+        assert!(lexer.next().is_err())
     }
 
     /// Helper function which takes in a source string, creates a lexer on that

@@ -1,14 +1,19 @@
+use std::fmt::Display;
 use std::ops::Range;
 
 /// Ash error type.
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    /// Error occurred while lexing.
-    Lex(String),
-    /// Error occurred while parsing.
-    Parse(String),
-    /// Error occurred while rendering.
-    Render(String),
+    /// General, non-specific error.
+    General(String),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::General(s) => write!(f, "{s}"),
+        }
+    }
 }
 
 /// Represents a region (beginning and ending indices) within some source.
