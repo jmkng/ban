@@ -1,7 +1,11 @@
-use crate::Marker;
+use crate::{
+    compile::{Keyword, Operator},
+    Marker,
+};
 use std::fmt::Display;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+// #[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Token {
     /// Raw text.
     Raw,
@@ -10,7 +14,7 @@ pub enum Token {
     /// Number within a tag.
     Number,
     /// Identifier (unquoted string) within a tag.
-    Ident,
+    Identifier,
     /// Whitespace within a tag.
     Whitespace,
     /// Beginning of an expression - (( by default.
@@ -25,7 +29,7 @@ pub enum Token {
     Period,
     /// A recognized "special" keyword that begins a certain type of block.
     Keyword(Keyword),
-    ///
+    /// An operator akin to
     Operator(Operator),
 }
 
@@ -54,7 +58,7 @@ impl Display for Token {
             Token::Raw => write!(f, "raw"),
             Token::String => write!(f, "string"),
             Token::Number => write!(f, "number"),
-            Token::Ident => write!(f, "identifer"),
+            Token::Identifier => write!(f, "identifer"),
             Token::Whitespace => write!(f, "whitespace"),
             // TODO: include user's actual begin/end tags
             Token::BeginExpression => write!(f, "begin expression"),
@@ -64,69 +68,6 @@ impl Display for Token {
             Token::Period => write!(f, "."),
             Token::Keyword(keyword) => write!(f, "keyword {}", keyword),
             Token::Operator(operator) => write!(f, "oeprator {}", operator),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum Keyword {
-    If,
-    Let,
-    For,
-    In,
-    Include,
-    EndFor,
-    EndIf,
-}
-
-impl Display for Keyword {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Keyword::If => write!(f, "if"),
-            Keyword::Let => write!(f, "let"),
-            Keyword::For => write!(f, "for"),
-            Keyword::Include => write!(f, "include"),
-            Keyword::In => write!(f, "in"),
-            Keyword::EndFor => write!(f, "endfor"),
-            Keyword::EndIf => write!(f, "endif"),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum Operator {
-    /// +
-    Add,
-    /// -
-    Subtract,
-    /// *
-    Multiply,
-    /// /
-    Divide,
-    /// =
-    Assign,
-    /// ==
-    Equal,
-    /// !=
-    NotEqual,
-    /// >=
-    GreaterOrEqual,
-    /// <=
-    LesserOrEqual,
-}
-
-impl Display for Operator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Operator::Add => write!(f, "add (+)"),
-            Operator::Subtract => write!(f, "subtract (-)"),
-            Operator::Multiply => write!(f, "multiply (*)"),
-            Operator::Divide => write!(f, "divide (/)"),
-            Operator::Assign => write!(f, "assign (=)"),
-            Operator::Equal => write!(f, "equal (==)"),
-            Operator::NotEqual => write!(f, "not equal (!=)"),
-            Operator::GreaterOrEqual => write!(f, "greater or equal (>=)"),
-            Operator::LesserOrEqual => write!(f, "lesser or equal (<=)"),
         }
     }
 }

@@ -14,13 +14,11 @@ mod token;
 
 pub use token::Token;
 
-use self::{state::State, token::Operator};
-use crate::{
-    compile::lexer::token::Keyword,
-    types::{Error, Region},
-    SyntaxBuilder,
-};
+use self::state::State;
+use crate::{error::Error, region::Region, SyntaxBuilder};
 use scout::Finder;
+
+use super::{Keyword, Operator};
 
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
 
@@ -48,7 +46,7 @@ pub struct Lexer<'source> {
 }
 
 impl<'source> Lexer<'source> {
-    /// Create a new instance of Lexer.
+    /// Create a new Lexer from the given string.
     pub fn new(source: &'source str) -> Self {
         Self {
             finder: Finder::new(SyntaxBuilder::new().build()),
@@ -300,7 +298,7 @@ impl<'source> Lexer<'source> {
                 "endfor" => Token::Keyword(Keyword::EndFor),
                 "endif" => Token::Keyword(Keyword::EndIf),
 
-                _ => Token::Ident,
+                _ => Token::Identifier,
             };
             self.cursor = to;
 
@@ -444,13 +442,14 @@ fn is_ident_or_keyword(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        token::{Keyword, Operator},
-        Lexer,
-    };
+    use super::Lexer;
     use crate::{
-        compile::lexer::{calc_column_number, calc_line_number, State, Token},
-        types::{Error, Region},
+        compile::{
+            lexer::{calc_column_number, calc_line_number, State, Token},
+            Keyword, Operator,
+        },
+        error::Error,
+        region::Region,
     };
     use std::fs::read_to_string;
 
@@ -483,7 +482,7 @@ mod tests {
         let expect = vec![
             (Token::Raw, 0..12),
             (Token::BeginExpression, 12..14),
-            (Token::Ident, 15..20),
+            (Token::Identifier, 15..20),
         ];
         lex_next_auto("lorem ipsum (( dolor", expect);
     }
@@ -493,7 +492,7 @@ mod tests {
         let expect = vec![
             (Token::Raw, 0..11),
             (Token::BeginExpression, 12..15),
-            (Token::Ident, 16..21),
+            (Token::Identifier, 16..21),
         ];
         lex_next_auto("lorem ipsum ((- dolor", expect);
     }
@@ -534,7 +533,7 @@ mod tests {
     fn test_lex_ident() {
         let expect = vec![
             (Token::BeginExpression, 0..2),
-            (Token::Ident, 3..8),
+            (Token::Identifier, 3..8),
             (Token::EndExpression, 9..11),
         ];
 
@@ -570,20 +569,20 @@ mod tests {
         let expect = vec![
             (Token::Raw, 0..196),
             (Token::BeginExpression, 196..198),
-            (Token::Ident, 199..203),
+            (Token::Identifier, 199..203),
             (Token::EndExpression, 204..206),
             (Token::Raw, 206..212),
             (Token::BeginBlock, 212..214),
             (Token::Keyword(Keyword::For), 215..218),
-            (Token::Ident, 219..225),
+            (Token::Identifier, 219..225),
             (Token::Keyword(Keyword::In), 226..228),
-            (Token::Ident, 229..235),
+            (Token::Identifier, 229..235),
             (Token::EndBlock, 236..238),
             (Token::Raw, 238..247),
             (Token::BeginExpression, 247..249),
-            (Token::Ident, 250..256),
+            (Token::Identifier, 250..256),
             (Token::Period, 256..257),
-            (Token::Ident, 257..261),
+            (Token::Identifier, 257..261),
             (Token::EndExpression, 262..264),
             (Token::Raw, 264..269),
             (Token::BeginBlock, 269..271),
@@ -592,7 +591,7 @@ mod tests {
             (Token::Raw, 281..287),
             (Token::BeginBlock, 287..289),
             (Token::Keyword(Keyword::If), 290..292),
-            (Token::Ident, 293..297),
+            (Token::Identifier, 293..297),
             (Token::Operator(Operator::Equal), 298..300),
             (Token::String, 301..309),
             (Token::EndBlock, 310..312),
@@ -622,7 +621,7 @@ mod tests {
         let expect = vec![
             (Token::Raw, 0..6),
             (Token::BeginExpression, 6..8),
-            (Token::Ident, 9..13),
+            (Token::Identifier, 9..13),
         ];
         let mut lexer = Lexer::new("hello (( name (( ))");
         // Expecting error, so cannot use lex_next_auto

@@ -7,16 +7,36 @@
 //!
 //! &str -> Vec<Region> -> Template -> String
 //!         -----------------------
+mod scope;
+mod state;
 mod token;
 
-use super::lexer::{self, LexResult};
-use super::{lexer::Lexer, template::Template};
-use crate::types::{Error, Region};
+use crate::{
+    compile::{
+        lexer::{self, LexResult, Lexer},
+        parser::scope::Scope,
+        template::Template,
+    },
+    error::Error,
+    region::Region,
+};
 
+use self::token::{Expression, LoopVariables};
 use lexer::Token as LexerToken;
 use token::Token as ParserToken;
 
 type ParseResult = Result<(ParserToken, Region), Error>;
+
+pub enum Block {
+    If(bool, Expression),
+    ElseIf(bool, Expression),
+    Else,
+    EndIf,
+    For(LoopVariables, Expression),
+    EndFor,
+    EndWith,
+    Include(String, Option<Expression>),
+}
 
 pub struct Parser<'source> {
     /// Lexer used to pull from source as tokens instead of raw text.
@@ -28,6 +48,8 @@ pub struct Parser<'source> {
 }
 
 impl<'source> Parser<'source> {
+    /// Create a new Parser from the given string.
+    #[inline]
     pub fn new(source: &'source str) -> Self {
         Self {
             source: Lexer::new(source),
@@ -35,24 +57,27 @@ impl<'source> Parser<'source> {
         }
     }
 
+    /// Compile the given
     pub fn compile(mut self) -> Result<Template<'source>, Error> {
-        let mut regions = vec![];
+        // let mut states = vec![];
+        let mut scopes = vec![Scope::new()];
 
-        while let Some((token, region)) = self.next()? {
-            // Translate incoming Lexer::Token instances to Parser::Token.
-            let region: ParseResult = match token {
-                lexer::Token::Raw => Ok((ParserToken::Raw, (region.begin..region.end).into())),
-                lexer::Token::BeginExpression => self.parse_expression(region.begin),
-                lexer::Token::BeginBlock => self.parse_block(region.begin),
-                _ => panic!("unrecognized token surfaced in parser.compile"),
-            };
+        // while let Some((token, region)) = self.next()? {
+        //     // Translate incoming Lexer::Token instances to Parser::Token.
+        //     let region = match token {
+        //         LexerToken::Raw => Ok((ParserToken::Raw, (region.begin..region.end).into())),
+        //         LexerToken::BeginExpression => self.parse_expression(region.begin),
+        //         LexerToken::BeginBlock => self.parse_block(region.begin),
+        //         _ => panic!("unrecognized token surfaced in parser.compile"),
+        //     };
 
-            regions.push(region);
-        }
+        //     regions.push(region);
+        // }
 
         todo!()
     }
 
+    /// Parse a block.
     fn parse_block(&mut self, from: usize) -> ParseResult {
         // from
         // |
@@ -64,10 +89,11 @@ impl<'source> Parser<'source> {
         todo!();
     }
 
+    /// Parse an expression.
     fn parse_expression(&mut self, from: usize) -> ParseResult {
-        // (( name ))
-        // |         |
-        // from      to
+        // (( name | upper ))
+        // |                 |
+        // from              to
         todo!();
     }
 
@@ -94,9 +120,8 @@ impl<'source> Parser<'source> {
 
 #[cfg(test)]
 mod tests {
-    use crate::compile::lexer::Token;
-
     use super::Parser;
+    use crate::compile::lexer::Token;
 
     #[test]
     fn test_parser_lexer_integration() {

@@ -1,6 +1,8 @@
+//! Ash - Template Engine
 mod compile;
+mod error;
+mod region;
 mod syntax;
-mod types;
 
 pub use compile::compile;
 pub use syntax::{Marker, SyntaxBuilder};
