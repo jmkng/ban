@@ -38,9 +38,9 @@ impl From<Marker> for usize {
     }
 }
 
-/// A handy way to build a new instance of Syntax.
+/// Provides methods to easily build a Syntax.
 ///
-/// The types behind the constructed syntax are described by syntax::Marker.
+/// The types behind the constructed syntax are described by Marker.
 ///
 /// # Example
 ///
@@ -73,7 +73,7 @@ impl<'a> SyntaxBuilder<'a> {
     /// Blocks: (* if ... *)
     /// Whitespace: ((- -)) / (*- -*)
     ///
-    /// To proceed with these defaults, you may immediately call [.build()]
+    /// To proceed with these defaults, you may immediately call 'build'
     /// to receive the Syntax instance.
     #[inline]
     pub fn new() -> Self {

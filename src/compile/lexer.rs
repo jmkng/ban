@@ -1,38 +1,31 @@
 //! Ash lexer.
 //!
-//! Receives a reference to some external string and provides methods to produce
-//! instances of Region, which describe the type and location of tokens within
-//! the source.
+//! Provides facilities to iterate over text to produce Token and Region
+//! instances, which are easier for the Parser to operate on than raw text.
 //!
-//! The lexer is designed to be embedded within the parser, rather than used on
-//! its own.
-//!
-//! &str -> Vec<Region> -> Template -> String
-//! -------------------
+//! Lexer is designed to be embedded within Parser, but is implemented
+//! separately to make testing easier.
 mod state;
 mod token;
 
 pub use token::Token;
 
 use self::state::State;
-use crate::{error::Error, region::Region, SyntaxBuilder};
+use crate::{general_error, region::Region, Error, SyntaxBuilder};
 use scout::Finder;
 
 use super::{Keyword, Operator};
 
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
+pub type LexResultMust = Result<(Token, Region), Error>;
 
-macro_rules! general_error {
-    ($fmt:expr $(, $($args:expr),*)?) => {
-        Err(Error::General(format!($fmt $(, $($args),*)?)))
-    };
-}
-
+/// Provides methods to iterate over a source string and receive Token instances
+/// instead of characters or bytes.
 pub struct Lexer<'source> {
+    /// Text that is being analyzed.
+    pub source: &'source str,
     /// Utility for searching text for patterns.
     finder: Finder<&'source str>,
-    /// Text that is being analyzed.
-    source: &'source str,
     /// State determines the action taken when [.next()] is called.
     state: State,
     /// Position within source.
@@ -47,6 +40,7 @@ pub struct Lexer<'source> {
 
 impl<'source> Lexer<'source> {
     /// Create a new Lexer from the given string.
+    #[inline]
     pub fn new(source: &'source str) -> Self {
         Self {
             finder: Finder::new(SyntaxBuilder::new().build()),
@@ -72,7 +66,6 @@ impl<'source> Lexer<'source> {
             }
 
             let c = self.cursor;
-
             let result = match self.state {
                 State::Default => self.lex_default(c),
                 State::Tag { .. } => self.lex_tag(c),
@@ -88,9 +81,9 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex the next token, behaving as though the cursor is inside of a tag.
+    /// Lex the next token.
     ///
-    /// Tag is a general term which can mean either block or expression.
+    /// Behaves as if the cursor is inside of a tag, which can be either a block or expression.
     fn lex_tag(&mut self, from: usize) -> LexResult {
         match self.finder.starts(self.source, from) {
             Some((id, length)) => {
@@ -144,7 +137,9 @@ impl<'source> Lexer<'source> {
                     '+' => advance(1, Token::Operator(Operator::Add)),
                     '/' => advance(1, Token::Operator(Operator::Divide)),
                     '-' => advance(1, Token::Operator(Operator::Subtract)),
+
                     '.' => advance(1, Token::Period),
+                    ':' => advance(1, Token::Colon),
 
                     c if c.is_whitespace() => Ok(Some(self.lex_whitespace(i, index))),
                     c if c.is_ascii_digit() => Ok(Some(self.lex_digit(i, index))),
@@ -154,7 +149,7 @@ impl<'source> Lexer<'source> {
 
                     // These operators may have a secondary character to them. ("==" | "!=", etc)
                     // lex_operator will handle it.
-                    '=' | '!' | '>' | '<' => self.lex_operator(i, index, char),
+                    '=' | '!' | '>' | '<' | '|' | '&' => self.lex_operator(i, index, char),
 
                     _ => general_error!("encountered unexpected character `{}`", char),
                 }
@@ -162,7 +157,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex a Region containing a Token::Operator.
+    /// Lex a Region that may contain a Token::Operator,
     ///
     /// This function will catch and return these types, but return an error if one of
     /// the patterns is not matched.
@@ -176,16 +171,31 @@ impl<'source> Lexer<'source> {
     /// Greater Or Equal: >=
     ///
     /// Lesser Or Equal: <=
+    ///
+    /// Or: ||
+    ///
+    /// And: &&
     fn lex_operator<T>(&mut self, mut iter: T, from: usize, previous: char) -> LexResult
     where
         T: Iterator<Item = (usize, char)>,
     {
-        let (position, operator) = match (previous, iter.next()) {
-            ('=', Some((usize, '='))) => (usize, Operator::Equal),
-            ('!', Some((usize, '='))) => (usize, Operator::NotEqual),
-            ('>', Some((usize, '='))) => (usize, Operator::GreaterOrEqual),
-            ('<', Some((usize, '='))) => (usize, Operator::LesserOrEqual),
-            ('=', Some(_)) | ('=', None) => (from, Operator::Assign),
+        // Note:
+        // This function is mainly used to return an Operator, but a special case exists:
+        // A single '|' is considered a Token::Pipe, not a Token::Operator.
+        //
+        // ||   <-- Or
+        // &&   <-- And
+        // |    <-- Pipe
+        // &    <-- ERROR
+        let (position, token) = match (previous, iter.next()) {
+            ('=', Some((usize, '='))) => (usize, Token::Operator(Operator::Equal)),
+            ('!', Some((usize, '='))) => (usize, Token::Operator(Operator::NotEqual)),
+            ('>', Some((usize, '='))) => (usize, Token::Operator(Operator::GreaterOrEqual)),
+            ('<', Some((usize, '='))) => (usize, Token::Operator(Operator::LesserOrEqual)),
+            ('|', Some((usize, '|'))) => (usize, Token::Operator(Operator::Or)),
+            ('&', Some((usize, '&'))) => (usize, Token::Operator(Operator::And)),
+            ('=', Some(_)) | ('=', None) => (from, Token::Operator(Operator::Assign)),
+            ('|', Some(_)) | ('|', None) => (from, Token::Pipe),
             c if c.1.is_some() => {
                 return general_error!("unrecognized operators `{}{}`", previous, c.1.unwrap().1)
             }
@@ -194,7 +204,7 @@ impl<'source> Lexer<'source> {
         let position = position + 1;
 
         self.cursor = position;
-        Ok(Some((Token::Operator(operator), (from..position).into())))
+        Ok(Some((token, (from..position).into())))
     }
 
     /// Lex a Region containing a Token::Number.
@@ -204,7 +214,7 @@ impl<'source> Lexer<'source> {
     {
         loop {
             match iter.next() {
-                Some((index, char)) if !char.is_ascii_digit() => {
+                Some((index, char)) if !is_number(char) => {
                     self.cursor = index;
 
                     break (Token::Number, (from..index).into());
@@ -233,7 +243,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex a Region containing a Token::String.
+    /// Lex a (Token::String, Region) with the given iterator.
     fn lex_string<T>(&mut self, mut iter: T, from: usize) -> LexResult
     where
         T: Iterator<Item = (usize, char)>,
@@ -278,7 +288,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex a Region containing a Token::Ident or Token::Keyword.
+    /// Lex a (Token::Ident | Token::Keyword, Region) with the given iterator.
     fn lex_ident_or_keyword<T>(&mut self, mut iter: T, from: usize) -> (Token, Region)
     where
         T: Iterator<Item = (usize, char)>,
@@ -289,6 +299,8 @@ impl<'source> Lexer<'source> {
                 .get(from..to)
                 .expect("valid range is required to check keyword");
 
+            // TODO: This must be manually updated if compile::Keyword is changed.
+            // Compiler won't warn about it.
             let token = match range_text.to_lowercase().as_str() {
                 "if" => Token::Keyword(Keyword::If),
                 "let" => Token::Keyword(Keyword::Let),
@@ -297,11 +309,13 @@ impl<'source> Lexer<'source> {
                 "include" => Token::Keyword(Keyword::Include),
                 "endfor" => Token::Keyword(Keyword::EndFor),
                 "endif" => Token::Keyword(Keyword::EndIf),
-
+                "else" => Token::Keyword(Keyword::Else),
+                "true" => Token::Keyword(Keyword::True),
+                "false" => Token::Keyword(Keyword::False),
                 _ => Token::Identifier,
             };
-            self.cursor = to;
 
+            self.cursor = to;
             (token, (from..to).into())
         };
 
@@ -316,12 +330,10 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex a Region containing a Token::Raw.
+    /// Lex a (Token, Region) and behave as if the cursor is not inside of an
+    /// expression or block.
     fn lex_default(&mut self, from: usize) -> LexResult {
-        // A closure which trims the bounds of the given indices and returns them
-        // as a Region, with a Token::Raw embedded in the data property.
-        //
-        // The only Token type which should ever be trimmed is Token::Raw.
+        // Trims the bounds of the given indices and returns them as a Region.
         let mut trim_region = |mut region_begin, mut region_end, right_trim| {
             if right_trim {
                 region_end = self.source[..region_end].trim_end().len();
@@ -333,15 +345,15 @@ impl<'source> Lexer<'source> {
                 region_begin = s.len() - s.trim_start().len()
             }
 
+            // The only Token kind that should ever be trimmed is Token::Raw,
+            // so we just assume that is what this is.
             Ok(Some((Token::Raw, (region_begin..region_end).into())))
         };
 
         match self.finder.next(self.source, from) {
             Some((id, marker_begin, marker_end)) => {
                 // Found a marker, so return everything up to that marker first as
-                // Token::Raw.
-                //
-                // The marker can be stored in the buffer, it will be read next.
+                // Token::Raw and store the marker in buffer.
                 let (token, is_trimmed) = Token::from_usize_trim(id);
 
                 match &token {
@@ -389,18 +401,29 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Get the line and column numbers based on the Lexer position.
-    fn get_position(&self) -> (usize, usize) {
+    /// Return the line number (.0) and column number (.1) of the cursor within
+    /// the source text.
+    pub fn get_position(&self) -> (usize, usize) {
         (
-            calc_line_number(self.source, self.cursor),
-            calc_column_number(self.source, self.cursor),
+            get_line(self.source, self.cursor),
+            get_column(self.source, self.cursor),
         )
+    }
+
+    /// Return the column number of the cursor within the source text.
+    pub fn get_column(&self) -> usize {
+        get_column(self.source, self.cursor)
+    }
+
+    /// Return the line number of the cursor within the source text.
+    pub fn get_line(&self) -> usize {
+        get_line(self.source, self.cursor)
     }
 }
 
-/// Determine the amount of newlines that exist in the given source from the beginning
-/// (0) up to the given index.
-fn calc_line_number(source: &str, index: usize) -> usize {
+/// Return the amount of newline (\n) characters that exist in the source from the
+/// beginning index (0) up to the given index.
+fn get_line(source: &str, index: usize) -> usize {
     let mut line = 1;
 
     let window = source
@@ -416,9 +439,9 @@ fn calc_line_number(source: &str, index: usize) -> usize {
     return line;
 }
 
-/// Determine the amount of characters that exist between the given index and the
-/// closest newline.
-fn calc_column_number(source: &str, index: usize) -> usize {
+/// Return the amount of characters between the given index and the most recently
+/// discovered newline (\n).
+fn get_column(source: &str, index: usize) -> usize {
     let window = source
         .get(..index)
         .expect("getting window for column calculation should not fail");
@@ -435,9 +458,20 @@ fn calc_column_number(source: &str, index: usize) -> usize {
     chars
 }
 
-/// Checks if the char is a recognized ident/keyword character.
+/// Return true if the given character is considered to be an identifier
+/// or keyword.
+///
+/// These are (0-9), (A-Z), (a-z) and '_'.
 fn is_ident_or_keyword(c: char) -> bool {
     matches!(c, '0'..='9' | 'A'..='Z' | 'a'..='z' | '_')
+}
+
+/// Return true if the given character is a number (0-9) or a period.
+///
+/// Period is considered to be number because it often appears in floats
+/// such as "10.2".
+fn is_number(c: char) -> bool {
+    matches!(c, '0'..='9' | '.')
 }
 
 #[cfg(test)]
@@ -445,7 +479,7 @@ mod tests {
     use super::Lexer;
     use crate::{
         compile::{
-            lexer::{calc_column_number, calc_line_number, State, Token},
+            lexer::{get_column, get_line, State, Token},
             Keyword, Operator,
         },
         error::Error,
@@ -455,20 +489,20 @@ mod tests {
 
     #[test]
     fn test_calc_line_number() {
-        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 4), 1);
-        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 5), 1);
-        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 6), 1);
-        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 7), 2);
-        assert_eq!(calc_line_number("hello\r\nworld\ngoodbye", 13), 3);
+        assert_eq!(get_line("hello\r\nworld\ngoodbye", 4), 1);
+        assert_eq!(get_line("hello\r\nworld\ngoodbye", 5), 1);
+        assert_eq!(get_line("hello\r\nworld\ngoodbye", 6), 1);
+        assert_eq!(get_line("hello\r\nworld\ngoodbye", 7), 2);
+        assert_eq!(get_line("hello\r\nworld\ngoodbye", 13), 3);
     }
 
     #[test]
     fn test_calc_column_number() {
-        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 6), 7);
-        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 9), 3);
-        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 12), 6);
-        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 13), 1);
-        assert_eq!(calc_column_number("hello\r\nworld\ngoodbye", 15), 3);
+        assert_eq!(get_column("hello\r\nworld\ngoodbye", 6), 7);
+        assert_eq!(get_column("hello\r\nworld\ngoodbye", 9), 3);
+        assert_eq!(get_column("hello\r\nworld\ngoodbye", 12), 6);
+        assert_eq!(get_column("hello\r\nworld\ngoodbye", 13), 1);
+        assert_eq!(get_column("hello\r\nworld\ngoodbye", 15), 3);
     }
 
     #[test]
@@ -599,7 +633,21 @@ mod tests {
             (Token::BeginBlock, 347..349),
             (Token::Keyword(Keyword::EndFor), 350..356),
             (Token::EndBlock, 357..359),
-            (Token::Raw, 359..375),
+            (Token::Raw, 359..365),
+            (Token::BeginExpression, 365..367),
+            (Token::Identifier, 368..372),
+            (Token::Pipe, 373..374),
+            (Token::Identifier, 375..382),
+            (Token::Number, 383..384),
+            (Token::Colon, 384..385),
+            (Token::String, 386..395),
+            (Token::Pipe, 396..397),
+            (Token::Identifier, 398..404),
+            (Token::String, 405..408),
+            (Token::Pipe, 409..410),
+            (Token::Identifier, 411..416),
+            (Token::EndExpression, 417..419),
+            (Token::Raw, 419..435),
         ];
 
         lex_next_auto(&source, expect)

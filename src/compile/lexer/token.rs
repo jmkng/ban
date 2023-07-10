@@ -4,7 +4,9 @@ use crate::{
 };
 use std::fmt::Display;
 
-// #[derive(Debug, PartialEq, Copy, Clone)]
+/// Types emitted by the Lexer.
+///
+/// An abstraction over raw text to make construction of Tree types easier.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Token {
     /// Raw text.
@@ -27,6 +29,10 @@ pub enum Token {
     EndBlock,
     /// .
     Period,
+    /// |
+    Pipe,
+    /// :
+    Colon,
     /// A recognized "special" keyword that begins a certain type of block.
     Keyword(Keyword),
     /// An operator akin to
@@ -60,14 +66,15 @@ impl Display for Token {
             Token::Number => write!(f, "number"),
             Token::Identifier => write!(f, "identifer"),
             Token::Whitespace => write!(f, "whitespace"),
-            // TODO: include user's actual begin/end tags
             Token::BeginExpression => write!(f, "begin expression"),
             Token::EndExpression => write!(f, "end expression"),
             Token::BeginBlock => write!(f, "begin block"),
             Token::EndBlock => write!(f, "end block"),
-            Token::Period => write!(f, "."),
-            Token::Keyword(keyword) => write!(f, "keyword {}", keyword),
-            Token::Operator(operator) => write!(f, "oeprator {}", operator),
+            Token::Period => write!(f, "period (.)"),
+            Token::Keyword(keyword) => write!(f, "keyword {keyword}"),
+            Token::Operator(operator) => write!(f, "operator {operator}"),
+            Token::Pipe => write!(f, "pipe (|)"),
+            Token::Colon => write!(f, "colon (:)"),
         }
     }
 }

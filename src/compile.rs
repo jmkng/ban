@@ -1,7 +1,8 @@
 mod lexer;
-mod parser;
+pub(crate) mod parser;
 mod template;
 
+pub use crate::compile::parser::Tree;
 use crate::{
     compile::{parser::Parser, template::Template},
     error::Error,
@@ -21,6 +22,9 @@ pub enum Keyword {
     Include,
     EndFor,
     EndIf,
+    Else,
+    True,
+    False,
 }
 
 impl Display for Keyword {
@@ -33,6 +37,9 @@ impl Display for Keyword {
             Keyword::In => write!(f, "in"),
             Keyword::EndFor => write!(f, "endfor"),
             Keyword::EndIf => write!(f, "endif"),
+            Keyword::Else => write!(f, "else"),
+            Keyword::True => write!(f, "true"),
+            Keyword::False => write!(f, "false"),
         }
     }
 }
@@ -57,6 +64,10 @@ pub enum Operator {
     GreaterOrEqual,
     /// <=
     LesserOrEqual,
+    /// ||
+    Or,
+    /// &&
+    And,
 }
 
 impl Display for Operator {
@@ -71,6 +82,8 @@ impl Display for Operator {
             Operator::NotEqual => write!(f, "not equal (!=)"),
             Operator::GreaterOrEqual => write!(f, "greater or equal (>=)"),
             Operator::LesserOrEqual => write!(f, "lesser or equal (<=)"),
+            Operator::Or => write!(f, "or (||)"),
+            Operator::And => write!(f, "and (&&)"),
         }
     }
 }

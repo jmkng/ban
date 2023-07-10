@@ -1,9 +1,16 @@
 use std::fmt::Display;
 
-/// Ash error type.
+#[macro_export]
+macro_rules! general_error {
+    ($fmt:expr $(, $($args:expr),*)?) => {
+        Err(Error::General(format!($fmt $(, $($args),*)?)))
+    };
+}
+
+/// Represents a custom error type.
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    /// General, non-specific error.
+    /// A general purpose, non-specific error.
     General(String),
 }
 

@@ -1,50 +1,41 @@
 //! Ash parser.
 //!
-//! Utilizes a lexer to receive instances of Region, which it uses to construct
-//! a Template instance that contains the AST.
+//! Utilizes a Lexer to receive instances of Region, which it uses to construct
+//! a new Template containing the Abstract Syntax Tree.
 //!
 //! This template can be combined with some context data to produce output.
-//!
-//! &str -> Vec<Region> -> Template -> String
-//!         -----------------------
-mod scope;
+mod block;
+pub(crate) mod scope;
 mod state;
-mod token;
+pub(crate) mod tree;
 
+use self::{
+    block::Block,
+    tree::{Arguments, Base, Call, Expression, Identifier, Key, Literal, Variable},
+};
+use super::lexer::Token;
+use super::{
+    lexer::{LexResult, LexResultMust, Lexer},
+    template::Template,
+    Keyword, Operator,
+};
 use crate::{
-    compile::{
-        lexer::{self, LexResult, Lexer},
-        parser::scope::Scope,
-        template::Template,
-    },
+    compile::parser::{scope::Scope, state::State, tree::Output},
     error::Error,
+    general_error,
     region::Region,
 };
-
-use self::token::{Expression, LoopVariables};
-use lexer::Token as LexerToken;
-use token::Token as ParserToken;
-
-type ParseResult = Result<(ParserToken, Region), Error>;
-
-pub enum Block {
-    If(bool, Expression),
-    ElseIf(bool, Expression),
-    Else,
-    EndIf,
-    For(LoopVariables, Expression),
-    EndFor,
-    EndWith,
-    Include(String, Option<Expression>),
-}
+use serde_json::{Number, Value};
+use std::ops::Range;
+pub use tree::Tree;
 
 pub struct Parser<'source> {
     /// Lexer used to pull from source as tokens instead of raw text.
-    source: Lexer<'source>,
+    lexer: Lexer<'source>,
     /// Store peeked tokens.
     ///
     /// Double option is used to remember when the next token is None.
-    buffer: Option<Option<(LexerToken, Region)>>,
+    buffer: Option<Option<(Token, Region)>>,
 }
 
 impl<'source> Parser<'source> {
@@ -52,33 +43,73 @@ impl<'source> Parser<'source> {
     #[inline]
     pub fn new(source: &'source str) -> Self {
         Self {
-            source: Lexer::new(source),
+            lexer: Lexer::new(source),
             buffer: None,
         }
     }
 
-    /// Compile the given
-    pub fn compile(mut self) -> Result<Template<'source>, Error> {
-        // let mut states = vec![];
-        let mut scopes = vec![Scope::new()];
+    /// Compile the template.
+    ///
+    /// Returns a new Template, which can be executed with some context
+    /// data to receive output.
+    pub fn compile(mut self) -> Result<Template, Error> {
+        // Store a series of State instances to help remember where we are.
+        let mut states: Vec<State> = vec![];
+        // Contains the distinct Tree instances within a specific area of the source.
+        //
+        // Used to remember what belongs to the if branch and what belongs to the else
+        // branch in an "if" tag, for example.
+        let mut scopes: Vec<Scope> = vec![Scope::new()];
 
-        // while let Some((token, region)) = self.next()? {
-        //     // Translate incoming Lexer::Token instances to Parser::Token.
-        //     let region = match token {
-        //         LexerToken::Raw => Ok((ParserToken::Raw, (region.begin..region.end).into())),
-        //         LexerToken::BeginExpression => self.parse_expression(region.begin),
-        //         LexerToken::BeginBlock => self.parse_block(region.begin),
-        //         _ => panic!("unrecognized token surfaced in parser.compile"),
-        //     };
+        while let Some(next) = self.next()? {
+            let token = match next {
+                (Token::Raw, region) => Tree::Raw(region),
 
-        //     regions.push(region);
-        // }
+                (Token::BeginExpression, region) => {
+                    let expression = self.parse_expression()?;
+                    let (_, next_region) = self.next_must(Token::EndExpression)?;
+                    let merge = region.combine(next_region);
 
-        todo!()
+                    Tree::Output(Output::from((expression, merge)))
+                }
+
+                (Token::BeginBlock, region) => {
+                    let block = self.parse_block()?;
+                    todo!()
+                }
+
+                _ => todo!(),
+            };
+
+            scopes.last_mut().unwrap().tokens.push(token);
+        }
+
+        if let Some(block) = states.first() {
+            let (block, close, region) = match block {
+                State::If { region, .. } => ("if", "endif", region),
+                State::For { region, .. } => ("for", "endfor", region),
+            };
+
+            return general_error!(
+                "failed to parse template, did you close the `{block}` block at `{region}` with a `{close}`?"
+            );
+        }
+
+        assert!(
+            scopes.len() == 1,
+            "parser should never have >1 scope after compilation"
+        );
+
+        Ok(Template {
+            scope: scopes.remove(0),
+        })
     }
 
     /// Parse a block.
-    fn parse_block(&mut self, from: usize) -> ParseResult {
+    ///
+    /// A block is a call to evaluate some kind of expression which may have
+    /// side effects on the context data.
+    fn parse_block(&mut self) -> Result<Block, Error> {
         // from
         // |
         // (* if name == "taylor" *)
@@ -86,34 +117,428 @@ impl<'source> Parser<'source> {
         // (* endfor *)
         //             |
         //             to
-        todo!();
+        let (keyword, _) = self.parse_keyword()?;
+
+        match keyword {
+            Keyword::If => {
+                let expression = self.parse_if()?;
+                Ok(Block::If(expression))
+            }
+            _ => todo!(),
+        }
     }
 
     /// Parse an expression.
-    fn parse_expression(&mut self, from: usize) -> ParseResult {
-        // (( name | upper ))
-        // |                 |
-        // from              to
-        todo!();
+    ///
+    /// An expression is a call to render some kind of data,
+    /// and may contain one or more "filters" which are used to modify the output.
+    fn parse_expression(&mut self) -> Result<Expression, Error> {
+        // (( name | prepend 1: "hello, " | append "!" | upper ))
+        // |                                                     |
+        // from                                                  to
+        let mut expression = Expression::Base(self.parse_base_expression()?);
+
+        while self.next_is(Token::Pipe)? {
+            self.next_must(Token::Pipe)?;
+            let name = self.parse_ident()?;
+            let arguments = self.parse_args()?;
+
+            let end_as: Region = if arguments.is_some() {
+                arguments.as_ref().unwrap().region
+            } else {
+                name.region
+            };
+            let region = expression.get_region().combine(end_as);
+
+            expression = Expression::Call(Call {
+                name,
+                arguments,
+                receiver: Box::new(expression),
+                region,
+            })
+        }
+
+        Ok(expression)
+    }
+
+    /// TODO
+    fn parse_if(&mut self) -> Result<Expression, Error> {
+        todo!()
+    }
+
+    /// Parse a Keyword.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the next token is not a Keyword.
+    fn parse_keyword(&mut self) -> Result<(Keyword, Region), Error> {
+        match self.next_must_any()? {
+            (Token::Keyword(keyword), region) => Ok((keyword, region)),
+            (token, region) => {
+                let line = self.lexer.get_line();
+                general_error!("unexpected token `{token}` at `{region}` on line `{line}`, expected keyword such as `if` or `for`")
+            }
+        }
+    }
+
+    /// Parse an Arguments.
+    ///
+    /// A filter's arguments may come in two different forms, named or anonymous.
+    ///
+    /// ## Named
+    ///
+    /// Named arguments have an explicit name. An argument name is an identifier
+    /// followed by a colon (:), and is always treated as a string.
+    ///
+    /// In this example, the name of the argument is "1" and the value is "hello, ".
+    ///
+    /// 1: "hello, "
+    ///
+    /// ## Anonymous
+    ///
+    /// Anonymous arguments have no explicitly assigned name, however they do still have
+    /// implicitly assigned names. View the filter module for more information on that.
+    ///
+    /// Here is an example of an anonymous argument:
+    ///
+    /// "hello, "
+    fn parse_args(&mut self) -> Result<Option<Arguments>, Error> {
+        // A few possible input variants:
+        // 1: "hello, " |
+        // "!" |
+        // |
+        // ))
+        let mut values: Vec<(Option<Region>, Base)> = vec![];
+
+        while !self.next_is(Token::Pipe)? && !self.next_is(Token::EndExpression)? {
+            let name_or_value = self.parse_base_expression()?;
+
+            if self.next_is(Token::Colon)? {
+                self.next_must(Token::Colon)?;
+
+                let value = self.parse_base_expression()?;
+                values.push((Some(name_or_value.get_region()), value))
+            } else {
+                values.push((None, name_or_value))
+            }
+        }
+        if values.is_empty() {
+            return Ok(None);
+        }
+
+        // Gets the true Region of the given argument.
+        let get_region = |pair: &(Option<Region>, Base)| {
+            if pair.0.is_some() {
+                pair.0.unwrap().combine(pair.1.get_region())
+            } else {
+                pair.1.get_region()
+            }
+        };
+
+        let first = values.first().unwrap();
+        let mut region = get_region(first);
+
+        if values.len() > 1 {
+            let last = values.last().unwrap();
+
+            let last_region = get_region(last);
+            region = region.combine(last_region)
+        }
+
+        Ok(Some(Arguments { values, region }))
+    }
+
+    /// Parse an Identifier.
+    ///
+    /// # Errors
+    ///
+    /// Propogates an error from next_must if the next token is not an
+    /// Identifier.
+    fn parse_ident(&mut self) -> Result<Identifier, Error> {
+        let (_, region) = self.next_must(Token::Identifier)?;
+        Ok(Identifier { region })
+    }
+
+    /// Parse a base expression.
+    ///
+    /// A Base may be returned as a Literal or Variable based on the value.
+    ///
+    /// ## Literal:
+    ///
+    /// "hello world"
+    ///
+    /// -1000
+    ///
+    /// 1000
+    ///
+    /// 10.2
+    ///
+    /// ## Variable:
+    ///
+    /// person.name
+    fn parse_base_expression(&mut self) -> Result<Base, Error> {
+        let expression = match self.next_must_any()? {
+            (Token::Keyword(_), region) => {
+                let literal = self.parse_bool_literal(region)?;
+                Base::Literal(literal)
+            },
+            (Token::Operator(operator), region) => match operator {
+                Operator::Add | Operator::Subtract => {
+                    let (_, next_region) = self.next_must(Token::Number)?;
+
+                    // -1000 | +1000  <- valid, negative/positive numbers
+                    // - 1000 | + 1000<- invalid
+                    if !region.is_neighbor(next_region) {
+                        return general_error!(
+                            "unexpected `{operator}` found in expression at `{region}`, \
+                            if you intended to make the number `{}` at `{}` positive or negative, \
+                            remove the separating whitespace at `{}`",
+                            &self.lexer.source[next_region],
+                            next_region,
+                            region.difference(next_region).expect("[.is_neighbor()] should ensure safety of [.difference()] unwrap")
+                        );
+                    }
+
+                    let merge = region.combine(next_region);
+                    let literal = self.parse_number_literal(&self.lexer.source[merge], merge)?;
+                    Base::Literal(literal)
+                }
+                operator => {
+                    return general_error!(
+                        "unexpected `{operator}` at beginning of expression, only `{}` and `{}` to indicate a \
+                        positive/negative number is valid here",
+                        Operator::Add,
+                        Operator::Subtract
+                    )
+                }
+            },
+            (Token::Number, region) => {
+                let literal = self.parse_number_literal(&self.lexer.source[region], region)?;
+                Base::Literal(literal)
+            },
+            (Token::String, region) => {
+                let literal = self.parse_string_literal(region)?;
+                Base::Literal(literal)
+            },
+            (Token::Identifier, region) => {
+                let mut path = vec![Key::from(Identifier { region })];
+
+                // Keep chaining keys as long as we see a period.
+                while self.next_is(Token::Period)? {
+                    self.next_must(Token::Period)?;
+                    path.push(self.parse_key()?);
+                }
+                Base::Variable(Variable { path })
+            },
+            (token, _) => {
+                return general_error!("unexpected token `{token}` at beginning of expression")
+            }
+        };
+
+        Ok(expression)
+    }
+
+    /// Parse a Literal containing a Value::String from the literal value
+    /// of the given Region.
+    ///
+    /// # Errors
+    ///
+    /// Propogates an error from [parse_string()] if an unrecognized escape character
+    /// is found.
+    fn parse_string_literal(&mut self, region: Region) -> Result<Literal, Error> {
+        let value = Value::String(self.parse_string(region)?);
+        Ok(Literal { value, region })
+    }
+
+    /// Parse a Key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the next token is not a valid Identifier such as "one.two".
+    fn parse_key(&mut self) -> Result<Key, Error> {
+        match self.next_must_any()? {
+            (Token::Identifier, region) => Ok(Key::from(Identifier { region })),
+            (token, region) => {
+                general_error!(
+                    "unexpected token `{token}` at `{region}` on line `{}`, \
+                    expected identifier such as `one` or `one.two",
+                    self.lexer.get_line()
+                )
+            }
+        }
+    }
+
+    /// Parse a String from the literal value of the given Region.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an unrecognized escape character is found.
+    fn parse_string(&self, region: Region) -> Result<String, Error> {
+        let window = self.get_literal_value(region);
+
+        let string = if window.contains('\\') {
+            let mut iter = window.char_indices().map(|(i, c)| (region.begin + i, c));
+            let mut string = String::new();
+
+            while let Some((_, c)) = iter.next() {
+                match c {
+                    '"' => continue,
+                    '\\' => {
+                        let (_, esc) = iter.next().unwrap();
+                        let c = match esc {
+                            'n' => '\n',
+                            'r' => '\r',
+                            't' => '\t',
+                            '\\' => '\\',
+                            '"' => '"',
+                            _ => {
+                                return general_error!(
+                                    "unrecognized escape character `{esc}` in `{window}` at `{region}`"
+                                );
+                            }
+                        };
+                        string.push(c);
+                    }
+                    c => string.push(c),
+                }
+            }
+            string
+        } else {
+            window[1..window.len() - 1].to_owned()
+        };
+
+        Ok(string)
+    }
+
+    /// Parse a Literal containing a Value::Number from the given Region.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the literal value of the Region cannot be converted
+    /// to a Value::Number.
+    fn parse_number_literal(&self, window: &str, region: Region) -> Result<Literal, Error> {
+        let as_number: Number = window.parse().map_err(|_| {
+            Error::General(format!(
+                "unrecognizable number `{window}` located at `{region}`, \
+                valid numbers may begin with `{}` to indicate a negative \
+                number and must not end with a decimal",
+                Operator::Subtract
+            ))
+        })?;
+
+        Ok(Literal {
+            value: Value::Number(as_number),
+            region,
+        })
+    }
+
+    /// Access the literal value of a Region.
+    ///
+    /// # Panics
+    ///
+    /// Assumes the region indices are valid, and panics if accessing
+    /// the literal value in the source is out of bounds or otherwise
+    /// fails.
+    fn get_literal_value(&self, region: Region) -> &str {
+        let range: Range<usize> = region.into();
+        self.lexer
+            .source
+            .get(range)
+            .expect("window over source should never fail")
+    }
+
+    /// Return a Literal containing a Value::Bool from the Region.
+    ///
+    /// # Errors
+    ///
+    /// If the Region does not point to a literal "true" or "false", an error is returned.
+    fn parse_bool_literal(&mut self, region: Region) -> Result<Literal, Error> {
+        let value: &str = self
+            .lexer
+            .source
+            .get::<Range<usize>>(region.into())
+            .expect("window over source should always exist");
+
+        let bool = match value {
+            "true" => true,
+            "false" => false,
+            _ => return general_error!("unexpected type"),
+        };
+
+        Ok(Literal {
+            value: Value::Bool(bool),
+            region,
+        })
     }
 
     /// Peek the next token.
+    ///
+    /// # Errors
+    ///
+    /// Propogates any errors reported by the underlying lexer.
     fn peek(&mut self) -> LexResult {
-        // If self.buffer is None, we must initialize it as Some.
         if let o @ None = &mut self.buffer {
-            *o = Some(self.source.next()?);
+            *o = Some(self.lexer.next()?);
         }
+
         Ok(self.buffer.unwrap())
     }
 
     /// Get the next token.
     ///
-    /// Pulls from internal buffer first, and if that is empty
-    /// pulls from the lexer.
+    /// Prefers to pull a token from the internal buffer first, but will pull from
+    /// the lexer when the buffer is empty.
     fn next(&mut self) -> LexResult {
         match self.buffer.take() {
             Some(t) => Ok(t),
-            None => self.source.next(),
+            None => self.lexer.next(),
+        }
+    }
+
+    /// Returns true if the given token matches the upcoming token.
+    ///
+    /// # Errors
+    ///
+    /// Propogates any errors reported by the underlying lexer.
+    fn next_is(&mut self, expect: Token) -> Result<bool, Error> {
+        Ok(self
+            .peek()?
+            .map(|(token, _)| token == expect)
+            .unwrap_or(false))
+    }
+
+    /// Get the next token, and compare it to the given token.
+    ///
+    /// # Errors
+    ///
+    /// An error is returned if the next token does not match the given token,
+    /// or when [next()] returns None.
+    fn next_must(&mut self, expect: Token) -> LexResultMust {
+        match self.next()? {
+            Some((token, region)) => {
+                if token == expect {
+                    Ok((token, region))
+                } else {
+                    general_error!(
+                        "unexpected token at `{region}`, received `{token}`, expected `{expect}`"
+                    )
+                }
+            }
+            None => general_error!("unexpected end of file, expected `{expect}`"),
+        }
+    }
+
+    /// Get the next token.
+    ///
+    /// Similar to "next()" but requires that a token is returned.
+    ///
+    /// # Errors
+    ///
+    /// An error is returned if no more tokens are left.
+    fn next_must_any(&mut self) -> LexResultMust {
+        match self.next()? {
+            Some((token, region)) => Ok((token, region)),
+            None => general_error!("unexpected end of file, expected additional tokens"),
         }
     }
 }
@@ -128,5 +553,31 @@ mod tests {
         let mut parser = Parser::new("hello");
         assert_eq!(parser.next(), Ok(Some((Token::Raw, (0..5).into()))));
         assert_eq!(parser.next(), Ok(None));
+    }
+
+    #[test]
+    fn test_parse_full_expression() {
+        let text = "hello (( name | prepend 1: \"hello, \" | append \"!\" | upper ))";
+        let result = Parser::new(text).compile();
+        assert!(result.is_ok());
+        // println!("{:#?}", result.unwrap().scope.tokens);
+        // println!("{}", text.get(6..60).unwrap())
+    }
+
+    #[test]
+    fn test_parse_negative_num_err() {
+        let text = "balance: (( - 1000 ))";
+        let result = Parser::new(text).compile();
+        assert!(result.is_err(),);
+    }
+
+    #[test]
+    fn test_peek_multiple() {
+        let text = "(( one two";
+        let mut parser = Parser::new(text);
+        assert!(parser.next().is_ok());
+        assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
+        assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
+        assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
     }
 }
