@@ -1,29 +1,49 @@
 mod lexer;
-pub(crate) mod parser;
 mod template;
 
-pub use crate::compile::parser::Tree;
-use crate::{
-    compile::{parser::Parser, template::Template},
-    error::Error,
-};
+pub use crate::compile::{parser::Parser, parser::Tree, template::Template};
+
+pub(crate) mod parser;
+
+use crate::error::Error;
 use std::fmt::Display;
 
+/// Compile a template.
+///
+/// Provides a shortcut to quickly compile a Template without creating
+/// an Engine.
+///
+/// If you create a Template that relies on custom filter functions,
+/// you will need to use [ash::new()] to create an Engine instance
+/// which can store your filters.
+///
+/// This Engine should also be used to perform the render.
 pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
     Parser::new(text).compile()
 }
 
+/// Keywords recognized by the Lexer and Parser.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Keyword {
+    /// TODO
     If,
+    /// TODO
     Let,
+    /// TODO
     For,
+    /// TODO
     In,
+    /// TODO
     Include,
+    /// TODO
     EndFor,
+    /// TODO
     EndIf,
+    /// TODO
     Else,
+    /// TODO
     True,
+    /// TODO
     False,
 }
 
@@ -44,6 +64,7 @@ impl Display for Keyword {
     }
 }
 
+/// Operators recognized by the Lexer and Parser.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Operator {
     /// +

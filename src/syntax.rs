@@ -1,3 +1,3 @@
 mod builder;
 
-pub use builder::{Marker, SyntaxBuilder};
+pub use builder::{Builder, Marker};

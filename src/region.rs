@@ -4,6 +4,8 @@ use std::{
     ops::{Index, Range},
 };
 
+use crate::error::Error;
+
 /// Represents a region (beginning and ending indices) within some source.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Region {
@@ -56,6 +58,21 @@ impl Region {
             begin: min(self.begin, other.begin),
             end: max(self.end, other.end),
         }
+    }
+
+    /// Access the literal value of a Region.
+    ///
+    /// # Errors
+    ///
+    /// Returns an Error if the Region is out of bounds in the given source text.
+    pub fn literal<'source>(&self, text: &'source str) -> Result<&'source str, Error> {
+        text.get(self.begin..self.end).ok_or_else(|| {
+            Error::General(format!(
+                "unable to locate literal value in source text at {}, \
+                was the source modified after template compilation?",
+                self
+            ))
+        })
     }
 }
 

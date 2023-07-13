@@ -3,16 +3,24 @@ use scout::Syntax;
 /// Defines the delimiters that identify blocks and expressions within templates.
 ///
 /// The actual value of each marker (custom delimiters) can be set by way of the
-/// SyntaxBuilder type.
+/// Builder type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Marker {
+    /// TODO
     BeginExpression = 0,
+    /// TODO
     EndExpression = 1,
+    /// TODO
     BeginExpressionTrim = 2,
+    /// TODO
     EndExpressionTrim = 3,
+    /// TODO
     BeginBlock = 4,
+    /// TODO
     EndBlock = 5,
+    /// TODO
     BeginBlockTrim = 6,
+    /// TODO
     EndBlockTrim = 7,
 }
 
@@ -45,10 +53,10 @@ impl From<Marker> for usize {
 /// # Example
 ///
 /// ```
-/// use ash::SyntaxBuilder;
+/// use ash::Builder;
 /// use scout::Finder;
 ///
-/// let syntax = SyntaxBuilder::new()
+/// let syntax = Builder::new()
 ///     .expression("((", "))")
 ///     .block("(*", "*)")
 ///     .whitespace(&'-')
@@ -58,14 +66,14 @@ impl From<Marker> for usize {
 /// let result = finder.next("hello ((", 0);
 /// ```
 #[derive(Debug, Clone)]
-pub struct SyntaxBuilder<'a> {
+pub struct Builder<'a> {
     expression: (&'a str, &'a str),
     block: (&'a str, &'a str),
     whitespace: &'a char,
 }
 
-impl<'a> SyntaxBuilder<'a> {
-    /// Create a new SyntaxBuilder.
+impl<'a> Builder<'a> {
+    /// Create a new Builder.
     ///
     /// The delimiters have defaults as described here:
     ///

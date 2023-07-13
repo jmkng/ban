@@ -8,13 +8,11 @@
 mod state;
 mod token;
 
-pub use token::Token;
-
 use self::state::State;
-use crate::{general_error, region::Region, Error, SyntaxBuilder};
-use scout::Finder;
-
 use super::{Keyword, Operator};
+use crate::{general_error, region::Region, Builder, Error};
+use scout::Finder;
+pub use token::Token;
 
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
 pub type LexResultMust = Result<(Token, Region), Error>;
@@ -43,7 +41,7 @@ impl<'source> Lexer<'source> {
     #[inline]
     pub fn new(source: &'source str) -> Self {
         Self {
-            finder: Finder::new(SyntaxBuilder::new().build()),
+            finder: Finder::new(Builder::new().build()),
             state: State::Default,
             source,
             left_trim: false,
@@ -508,7 +506,7 @@ mod tests {
     #[test]
     fn test_lex_default_no_match() {
         let expect = vec![(Token::Raw, 0..11)];
-        lex_next_auto("lorem ipsum", expect)
+        helper_lex_next_auto("lorem ipsum", expect)
     }
 
     #[test]
@@ -518,7 +516,7 @@ mod tests {
             (Token::BeginExpression, 12..14),
             (Token::Identifier, 15..20),
         ];
-        lex_next_auto("lorem ipsum (( dolor", expect);
+        helper_lex_next_auto("lorem ipsum (( dolor", expect);
     }
 
     #[test]
@@ -528,7 +526,7 @@ mod tests {
             (Token::BeginExpression, 12..15),
             (Token::Identifier, 16..21),
         ];
-        lex_next_auto("lorem ipsum ((- dolor", expect);
+        helper_lex_next_auto("lorem ipsum ((- dolor", expect);
     }
 
     #[test]
@@ -560,7 +558,7 @@ mod tests {
             (Token::EndExpression, 6..8),
         ];
 
-        lex_next_auto("(( 10 ))", expect);
+        helper_lex_next_auto("(( 10 ))", expect);
     }
 
     #[test]
@@ -571,7 +569,7 @@ mod tests {
             (Token::EndExpression, 9..11),
         ];
 
-        lex_next_auto("(( hello ))", expect);
+        helper_lex_next_auto("(( hello ))", expect);
     }
 
     #[test]
@@ -583,7 +581,7 @@ mod tests {
         ];
 
         // Lexer should convert to lowercase, so this should be okay.
-        lex_next_auto("(( IF ))", expect);
+        helper_lex_next_auto("(( IF ))", expect);
     }
 
     #[test]
@@ -594,12 +592,12 @@ mod tests {
             (Token::EndExpression, 14..16),
         ];
 
-        lex_next_auto(r#"(( "\"name\"" ))"#, expect);
+        helper_lex_next_auto(r#"(( "\"name\"" ))"#, expect);
     }
 
     #[test]
     fn test_lex_full_document() {
-        let source = read_to_string("tests/template.html").unwrap();
+        let source = read_to_string("examples/template.html").unwrap();
         let expect = vec![
             (Token::Raw, 0..196),
             (Token::BeginExpression, 196..198),
@@ -650,7 +648,7 @@ mod tests {
             (Token::Raw, 419..435),
         ];
 
-        lex_next_auto(&source, expect)
+        helper_lex_next_auto(&source, expect)
     }
 
     #[test]
@@ -661,7 +659,7 @@ mod tests {
             (Token::EndExpression, 10..12),
         ];
 
-        lex_next_auto("(( \"name\" ))", expect);
+        helper_lex_next_auto("(( \"name\" ))", expect);
     }
 
     #[test]
@@ -687,7 +685,7 @@ mod tests {
     /// Helper function which takes in a source string, creates a lexer on that
     /// string and iterates [expect.len()] amount of times and compares the result
     /// against [lexer.next()].
-    fn lex_next_auto<T>(source: &str, expect: Vec<(Token, T)>)
+    fn helper_lex_next_auto<T>(source: &str, expect: Vec<(Token, T)>)
     where
         T: Into<Region>,
     {

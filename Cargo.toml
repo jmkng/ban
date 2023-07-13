@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 scout = { git = "https://github.com/jmkng/scout" }
-serde_json = "1.0"
+serde = "1.0.171"
+serde_json = "1.0.102"

@@ -1,0 +1,35 @@
+<!-- 
+Example template that illustrates how an inheritance system might work. 
+
+This is the child template, so the blocks here would be collected and carried
+to the parent, in a loop, until the base template is found and executed.
+-->
+(* extends parent.html *)
+
+<!-- 
+Just one block.
+
+We see that an extends block exists, so we search for the named parent.
+
+When we parse the parent template, we will collect a series of blocks from them.
+After this is done, we can check each block and see if any of them are named
+identically to one of our blocks.
+
+If we see one, we will change its Region information to be identical to our
+blocks Region, so that when the template is rendered it gets the correct
+data.
+-->
+
+(* block content *)
+    Hello, (( name ))
+
+    (* for person in people *)
+        (( person.name ))
+    (* endfor *)
+
+    (* if name == "taylor" *)
+        Welcome back, Taylor.
+    (* endfor *)
+
+    (( name | prepend 1: "hello, " | append "!" | upper ))
+(* endblock *)

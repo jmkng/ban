@@ -52,7 +52,7 @@ impl<'source> Parser<'source> {
     ///
     /// Returns a new Template, which can be executed with some context
     /// data to receive output.
-    pub fn compile(mut self) -> Result<Template, Error> {
+    pub fn compile(mut self) -> Result<Template<'source>, Error> {
         // Store a series of State instances to help remember where we are.
         let mut states: Vec<State> = vec![];
         // Contains the distinct Tree instances within a specific area of the source.
@@ -102,6 +102,7 @@ impl<'source> Parser<'source> {
 
         Ok(Template {
             scope: scopes.remove(0),
+            source: self.lexer.source,
         })
     }
 
@@ -172,7 +173,7 @@ impl<'source> Parser<'source> {
     ///
     /// Returns an error if the next token is not a Keyword.
     fn parse_keyword(&mut self) -> Result<(Keyword, Region), Error> {
-        match self.next_must_any()? {
+        match self.next_any_must()? {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
             (token, region) => {
                 let line = self.lexer.get_line();
@@ -277,7 +278,7 @@ impl<'source> Parser<'source> {
     ///
     /// person.name
     fn parse_base_expression(&mut self) -> Result<Base, Error> {
-        let expression = match self.next_must_any()? {
+        let expression = match self.next_any_must()? {
             (Token::Keyword(_), region) => {
                 let literal = self.parse_bool_literal(region)?;
                 Base::Literal(literal)
@@ -356,7 +357,7 @@ impl<'source> Parser<'source> {
     ///
     /// Returns an error if the next token is not a valid Identifier such as "one.two".
     fn parse_key(&mut self) -> Result<Key, Error> {
-        match self.next_must_any()? {
+        match self.next_any_must()? {
             (Token::Identifier, region) => Ok(Key::from(Identifier { region })),
             (token, region) => {
                 general_error!(
@@ -374,7 +375,9 @@ impl<'source> Parser<'source> {
     ///
     /// Returns an error if an unrecognized escape character is found.
     fn parse_string(&self, region: Region) -> Result<String, Error> {
-        let window = self.get_literal_value(region);
+        let window = region
+            .literal(self.lexer.source)
+            .expect("window over source should never fail");
 
         let string = if window.contains('\\') {
             let mut iter = window.char_indices().map(|(i, c)| (region.begin + i, c));
@@ -430,21 +433,6 @@ impl<'source> Parser<'source> {
             value: Value::Number(as_number),
             region,
         })
-    }
-
-    /// Access the literal value of a Region.
-    ///
-    /// # Panics
-    ///
-    /// Assumes the region indices are valid, and panics if accessing
-    /// the literal value in the source is out of bounds or otherwise
-    /// fails.
-    fn get_literal_value(&self, region: Region) -> &str {
-        let range: Range<usize> = region.into();
-        self.lexer
-            .source
-            .get(range)
-            .expect("window over source should never fail")
     }
 
     /// Return a Literal containing a Value::Bool from the Region.
@@ -535,7 +523,7 @@ impl<'source> Parser<'source> {
     /// # Errors
     ///
     /// An error is returned if no more tokens are left.
-    fn next_must_any(&mut self) -> LexResultMust {
+    fn next_any_must(&mut self) -> LexResultMust {
         match self.next()? {
             Some((token, region)) => Ok((token, region)),
             None => general_error!("unexpected end of file, expected additional tokens"),

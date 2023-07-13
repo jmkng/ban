@@ -1,7 +1,7 @@
 use super::tree::Tree;
 
 /// A distinct set of Tree instances.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scope {
     pub tokens: Vec<Tree>,
 }

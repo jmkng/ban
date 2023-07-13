@@ -2,7 +2,7 @@ use crate::{compile::parser::scope::Scope, region::Region};
 use serde_json::Value;
 
 /// The Abstract Syntax Tree.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Tree {
     /// Raw text.
     Raw(Region),
@@ -18,7 +18,7 @@ pub enum Tree {
 
 /// Represents data within expression tags, "(( ))" by default, and may be a Base
 /// or Call variant.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     /// A Simple call to render the named value from the context.
     Base(Base),
@@ -40,7 +40,7 @@ impl Expression {
 }
 
 /// Represents a call to render some kind of Expression.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Output {
     pub expression: Expression,
     pub region: Region,
@@ -66,7 +66,7 @@ impl From<(Expression, Region)> for Output {
 ///
 /// A variable is an Identifier such as "person.name" which indicates
 /// the location of the true value within the context.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Base {
     Variable(Variable),
     Literal(Literal),
@@ -83,7 +83,7 @@ impl Base {
 }
 
 /// Set of Key instances that can be used to locate data within the context.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     pub path: Vec<Key>,
 }
@@ -100,7 +100,7 @@ impl Variable {
 }
 
 /// Path segment in a larger identifier.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Key {
     pub identifier: Identifier,
 }
@@ -120,13 +120,13 @@ impl From<Identifier> for Key {
 }
 
 /// Area that contains an identifying value.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Identifier {
     pub region: Region,
 }
 
 /// Literal data that does not need to be evaluated any further.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Literal {
     pub value: Value,
     pub region: Region,
@@ -136,7 +136,7 @@ pub struct Literal {
 ///
 /// Refer to an underlying Expression from which the input data
 /// may be derived.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Call {
     pub name: Identifier,
     pub arguments: Option<Arguments>,
@@ -145,21 +145,21 @@ pub struct Call {
 }
 
 /// Set of arguments that can be provided to a filter.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arguments {
     pub values: Vec<(Option<Region>, Base)>,
     pub region: Region,
 }
 
 /// Command to render another template.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Include {
     pub name: String,
     pub globals: Option<Expression>,
 }
 
 /// Conditional rendering expression.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IfElse {
     pub not: bool,
     pub condition: Expression,
@@ -168,7 +168,7 @@ pub struct IfElse {
 }
 
 /// Loop rendering expression.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ForLoop {
     pub not: bool,
     pub condition: Expression,
