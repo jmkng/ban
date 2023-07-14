@@ -12,7 +12,7 @@ pub use token::Token;
 
 use crate::{
     compile::{lexer::state::State, Keyword, Operator},
-    general_error, Builder, Error, Region,
+    Builder, Error, Region,
 };
 use scout::Finder;
 
@@ -109,13 +109,11 @@ impl<'source> Lexer<'source> {
                             };
 
                             let position = self.get_position();
-                            return general_error!(
-                                "unexpected token `{}` found at line {} character {}, have you closed the previous {}?",
-                                token,
-                                position.0,
-                                position.1,
-                                which
-                            );
+                            return Err(Error::General(format!(
+                                "unexpected token `{}` found at line {} character {}, \
+                                have you closed the previous {}?",
+                                token, position.0, position.1, which
+                            )));
                         }
                     }
                     _ => panic!("unexpected state for lex_tag"),
@@ -154,7 +152,10 @@ impl<'source> Lexer<'source> {
                     // lex_operator will handle it.
                     '=' | '!' | '>' | '<' | '|' | '&' => self.lex_operator(i, index, char),
 
-                    _ => general_error!("encountered unexpected character `{}`", char),
+                    _ => Err(Error::General(format!(
+                        "encountered unexpected character `{}`",
+                        char
+                    ))),
                 }
             }
         }
@@ -200,9 +201,18 @@ impl<'source> Lexer<'source> {
             ('=', Some(_)) | ('=', None) => (from, Token::Operator(Operator::Assign)),
             ('|', Some(_)) | ('|', None) => (from, Token::Pipe),
             c if c.1.is_some() => {
-                return general_error!("unrecognized operators `{}{}`", previous, c.1.unwrap().1)
+                return Err(Error::General(format!(
+                    "unrecognized operators `{}{}`",
+                    previous,
+                    c.1.unwrap().1
+                )))
             }
-            _ => return general_error!("unrecognized operator `{}`", previous),
+            _ => {
+                return Err(Error::General(format!(
+                    "unrecognized operator `{}`",
+                    previous
+                )))
+            }
         };
         let position = position + 1;
 
@@ -282,10 +292,10 @@ impl<'source> Lexer<'source> {
                         .get(from..take)
                         .expect("valid error must contain range");
 
-                    return general_error!(
+                    return Err(Error::General(format!(
                         "found undelimited string: `{} ...` <- try adding `\"`",
                         remaining
-                    );
+                    )));
                 }
             }
         }
@@ -371,10 +381,10 @@ impl<'source> Lexer<'source> {
                         }
                     }
                     _ => {
-                        return general_error!(
+                        return Err(Error::General(format!(
                             "unexpected token `{}`, expected beginning expression or beginning block",
                             token
-                        );
+                        )));
                     }
                 }
 

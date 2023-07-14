@@ -3,7 +3,7 @@ use crate::{
         tree::{Arguments, Base, Call, Expression, Key, Output, Tree},
         Scope, Template,
     },
-    general_error, Context, Engine, Error, Formatter, Region,
+    Context, Engine, Error, Formatter, Region,
 };
 use serde_json::Value;
 use std::{borrow::Cow, collections::HashMap, fmt::Write};
@@ -121,12 +121,12 @@ impl<'source, 'context> Renderer<'source, 'context> {
             let name_literal = call.name.region.literal(self.template.source)?;
             let func = self.engine.get_filter(name_literal);
             if func.is_none() {
-                return general_error!(
+                return Err(Error::General(format!(
                     "template has requested to use the filter `{}`, \
                     but filter is not registered in the engine, \
                     did you register the filter with [.add_filter | .add_filter_must]?",
                     name_literal
-                );
+                )));
             }
 
             let arguments = if call.arguments.is_some() {

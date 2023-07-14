@@ -14,10 +14,3 @@ impl Display for Error {
         }
     }
 }
-
-#[macro_export]
-macro_rules! general_error {
-    ($fmt:expr $(, $($args:expr),*)?) => {
-        Err(Error::General(format!($fmt $(, $($args),*)?)))
-    };
-}

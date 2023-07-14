@@ -1,4 +1,4 @@
-use crate::{general_error, Context, Error, Filter, Parser, Renderer, Template};
+use crate::{Context, Error, Filter, Parser, Renderer, Template};
 use std::collections::HashMap;
 
 /// Ash entry point.
@@ -46,7 +46,9 @@ impl<'source> Engine<'source> {
     {
         let as_string = name.to_string();
         if self.filters.get(&as_string).is_some() {
-            return general_error!("filter with name {name} already exists in engine");
+            return Err(Error::General(format!(
+                "filter with name {name} already exists in engine"
+            )));
         }
         self.filters.insert(as_string, Box::new(filter));
         Ok(())

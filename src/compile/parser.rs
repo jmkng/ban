@@ -22,7 +22,7 @@ use crate::{
         },
         Keyword, Operator,
     },
-    general_error, Error, Region, Scope, Template,
+    Error, Region, Scope, Template,
 };
 use serde_json::{Number, Value};
 use std::ops::Range;
@@ -62,7 +62,6 @@ impl<'source> Parser<'source> {
         while let Some(next) = self.next()? {
             let token = match next {
                 (Token::Raw, region) => Tree::Raw(region),
-
                 (Token::BeginExpression, region) => {
                     let expression = self.parse_expression()?;
                     let (_, next_region) = self.next_must(Token::EndExpression)?;
@@ -70,12 +69,10 @@ impl<'source> Parser<'source> {
 
                     Tree::Output(Output::from((expression, merge)))
                 }
-
                 (Token::BeginBlock, region) => {
                     let block = self.parse_block()?;
                     todo!()
                 }
-
                 _ => todo!(),
             };
 
@@ -88,9 +85,10 @@ impl<'source> Parser<'source> {
                 State::For { region, .. } => ("for", "endfor", region),
             };
 
-            return general_error!(
-                "failed to parse template, did you close the `{block}` block at `{region}` with a `{close}`?"
-            );
+            return Err(Error::General(format!(
+                "failed to parse template, \
+                did you close the `{block}` block at `{region}` with a `{close}`?"
+            )));
         }
 
         assert!(
@@ -175,7 +173,10 @@ impl<'source> Parser<'source> {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
             (token, region) => {
                 let line = self.lexer.get_line();
-                general_error!("unexpected token `{token}` at `{region}` on line `{line}`, expected keyword such as `if` or `for`")
+                Err(Error::General(format!(
+                    "unexpected token `{token}` at `{region}` on line `{line}`, \
+                    expected keyword such as `if` or `for`"
+                )))
             }
         }
     }
@@ -288,14 +289,14 @@ impl<'source> Parser<'source> {
                     // -1000 | +1000  <- valid, negative/positive numbers
                     // - 1000 | + 1000<- invalid
                     if !region.is_neighbor(next_region) {
-                        return general_error!(
+                        return Err(Error::General(format!(
                             "unexpected `{operator}` found in expression at `{region}`, \
                             if you intended to make the number `{}` at `{}` positive or negative, \
                             remove the separating whitespace at `{}`",
                             &self.lexer.source[next_region],
                             next_region,
                             region.difference(next_region).expect("[.is_neighbor()] should ensure safety of [.difference()] unwrap")
-                        );
+                        )));
                     }
 
                     let merge = region.combine(next_region);
@@ -303,12 +304,12 @@ impl<'source> Parser<'source> {
                     Base::Literal(literal)
                 }
                 operator => {
-                    return general_error!(
+                    return Err(Error::General(format!(
                         "unexpected `{operator}` at beginning of expression, only `{}` and `{}` to indicate a \
                         positive/negative number is valid here",
                         Operator::Add,
                         Operator::Subtract
-                    )
+                    )))
                 }
             },
             (Token::Number, region) => {
@@ -330,7 +331,9 @@ impl<'source> Parser<'source> {
                 Base::Variable(Variable { path })
             },
             (token, _) => {
-                return general_error!("unexpected token `{token}` at beginning of expression")
+                return Err(Error::General(format!(
+                    "unexpected token `{token}` at beginning of expression"
+                )))
             }
         };
 
@@ -357,13 +360,11 @@ impl<'source> Parser<'source> {
     fn parse_key(&mut self) -> Result<Key, Error> {
         match self.next_any_must()? {
             (Token::Identifier, region) => Ok(Key::from(Identifier { region })),
-            (token, region) => {
-                general_error!(
-                    "unexpected token `{token}` at `{region}` on line `{}`, \
-                    expected identifier such as `one` or `one.two",
-                    self.lexer.get_line()
-                )
-            }
+            (token, region) => Err(Error::General(format!(
+                "unexpected token `{token}` at `{region}` on line `{}`, \
+                expected identifier such as `one` or `one.two",
+                self.lexer.get_line()
+            ))),
         }
     }
 
@@ -393,9 +394,9 @@ impl<'source> Parser<'source> {
                             '\\' => '\\',
                             '"' => '"',
                             _ => {
-                                return general_error!(
+                                return Err(Error::General(format!(
                                     "unrecognized escape character `{esc}` in `{window}` at `{region}`"
-                                );
+                                )));
                             }
                         };
                         string.push(c);
@@ -448,7 +449,7 @@ impl<'source> Parser<'source> {
         let bool = match value {
             "true" => true,
             "false" => false,
-            _ => return general_error!("unexpected type"),
+            _ => return Err(Error::General(format!("unexpected type"))),
         };
 
         Ok(Literal {
@@ -505,12 +506,14 @@ impl<'source> Parser<'source> {
                 if token == expect {
                     Ok((token, region))
                 } else {
-                    general_error!(
+                    Err(Error::General(format!(
                         "unexpected token at `{region}`, received `{token}`, expected `{expect}`"
-                    )
+                    )))
                 }
             }
-            None => general_error!("unexpected end of file, expected `{expect}`"),
+            None => Err(Error::General(format!(
+                "unexpected end of file, expected `{expect}`"
+            ))),
         }
     }
 
@@ -524,7 +527,9 @@ impl<'source> Parser<'source> {
     fn next_any_must(&mut self) -> LexResultMust {
         match self.next()? {
             Some((token, region)) => Ok((token, region)),
-            None => general_error!("unexpected end of file, expected additional tokens"),
+            None => Err(Error::General(format!(
+                "unexpected end of file, expected additional tokens"
+            ))),
         }
     }
 }
