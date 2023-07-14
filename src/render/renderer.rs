@@ -117,7 +117,7 @@ impl<'source, 'context> Renderer<'source, 'context> {
             _ => unreachable!(),
         }?;
 
-        for call in call_stack {
+        for call in call_stack.iter().rev() {
             let name_literal = call.name.region.literal(self.template.source)?;
             let func = self.engine.get_filter(name_literal);
             if func.is_none() {
@@ -135,12 +135,12 @@ impl<'source, 'context> Renderer<'source, 'context> {
                 HashMap::new()
             };
 
-            value = Cow::Owned(
-                func.unwrap()
-                    .apply(&value, &arguments)
-                    // TODO fix error
-                    .map_err(|s| Error::General(s.to_string()))?,
-            );
+            let returned = func
+                .unwrap()
+                .apply(&value, &arguments)
+                .map_err(|s| Error::General(s.to_string()))?;
+
+            value = Cow::Owned(returned);
         }
 
         Ok(value)
