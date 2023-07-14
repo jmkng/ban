@@ -68,7 +68,9 @@ impl From<(Expression, Region)> for Output {
 /// the location of the true value within the context.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Base {
+    /// TODO
     Variable(Variable),
+    /// TODO
     Literal(Literal),
 }
 
@@ -85,6 +87,7 @@ impl Base {
 /// Set of Key instances that can be used to locate data within the context.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
+    /// TODO
     pub path: Vec<Key>,
 }
 
@@ -102,6 +105,7 @@ impl Variable {
 /// Path segment in a larger identifier.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Key {
+    /// TODO
     pub identifier: Identifier,
 }
 
@@ -122,13 +126,16 @@ impl From<Identifier> for Key {
 /// Area that contains an identifying value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identifier {
+    /// TODO
     pub region: Region,
 }
 
 /// Literal data that does not need to be evaluated any further.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Literal {
+    /// TODO
     pub value: Value,
+    /// TODO
     pub region: Region,
 }
 
@@ -138,53 +145,74 @@ pub struct Literal {
 /// may be derived.
 #[derive(Debug, Clone)]
 pub struct Call {
+    /// TODO
     pub name: Identifier,
+    /// TODO
     pub arguments: Option<Arguments>,
+    /// TODO
     pub receiver: Box<Expression>,
+    /// TODO
     pub region: Region,
 }
 
 /// Set of arguments that can be provided to a filter.
 #[derive(Debug, Clone)]
 pub struct Arguments {
+    /// TODO
     pub values: Vec<(Option<Region>, Base)>,
+    /// TODO
     pub region: Region,
 }
 
 /// Command to render another template.
 #[derive(Debug, Clone)]
 pub struct Include {
+    /// TODO
     pub name: String,
+    /// TODO
     pub globals: Option<Expression>,
 }
 
 /// Conditional rendering expression.
 #[derive(Debug, Clone)]
 pub struct IfElse {
+    /// TODO
     pub not: bool,
+    /// TODO
     pub condition: Expression,
+    /// TODO
     pub then_branch: Scope,
+    /// TODO
     pub else_branch: Option<Scope>,
 }
 
 /// Loop rendering expression.
 #[derive(Debug, Clone)]
 pub struct ForLoop {
+    /// TODO
     pub not: bool,
+    /// TODO
     pub condition: Expression,
+    /// TODO
     pub then_branch: Scope,
+    /// TODO
     pub else_branch: Option<Scope>,
 }
 
 /// Variable types derived from a loop.
 pub enum LoopVariables {
+    /// TODO
     Item(Identifier),
+    /// TODO
     KeyValue(KeyValue),
 }
 
 /// Key/value pair.
 pub struct KeyValue {
+    /// TODO
     pub key: Identifier,
+    /// TODO
     pub value: Identifier,
+    /// TODO
     pub region: Region,
 }

@@ -1,4 +1,9 @@
 //! Ash - Template Engine
+
+#![deny(unsafe_code)]
+#![warn(clippy::missing_docs)]
+#![warn(clippy::missing_docs_in_private_items)]
+
 mod compile;
 mod context;
 mod engine;

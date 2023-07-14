@@ -16,10 +16,7 @@ use crate::{
 };
 use scout::Finder;
 
-/// TODO
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
-
-/// TODO
 pub type LexResultMust = Result<(Token, Region), Error>;
 
 /// Provides methods to iterate over a source string and receive Token instances

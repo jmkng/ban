@@ -94,5 +94,6 @@ use std::collections::HashMap;
 /// assert_eq!(result, expect)
 /// ```
 pub trait Filter {
+    /// Execute the filter with the given input, and return a new Value as output.
     fn apply(&self, input: &Value, args: &HashMap<String, Value>) -> Result<Value, Error>;
 }
