@@ -301,7 +301,10 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex a (Token::Ident | Token::Keyword, Region) with the given iterator.
+    /// Lex a [Token::Ident | Token::Keyword, Region] with the given iterator.
+    ///
+    /// If the iterator yields an identifier that matches a recognized keyword,
+    /// a Token::Keyword is returned. Otherwise, a Token::Identifier is returned.
     fn lex_ident_or_keyword<T>(&mut self, mut iter: T, from: usize) -> (Token, Region)
     where
         T: Iterator<Item = (usize, char)>,

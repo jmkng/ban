@@ -29,6 +29,10 @@ pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
 pub enum Keyword {
     /// Beginning of an if expression.
     If,
+    /// Marks the beginning of the else_branch in an if expression.
+    Else,
+    /// End of an if expression.
+    EndIf,
     /// Beginning of an assignment.
     Let,
     /// Beginning of a loop.
@@ -36,22 +40,20 @@ pub enum Keyword {
     /// Divides the identifier from the context in a loop.
     ///
     /// In this example, identifier refers to "person" while context
-    /// refers to "people".
+    /// refers to "people":
     ///
     /// "for person in people"
     In,
+    /// End of a loop.
+    EndFor,
     /// Beginning of an include expression.
     Include,
     /// Beginning of an extends expression.
     Extends,
     /// Beginning of a block expression.
     Block,
-    /// End of a loop.
-    EndFor,
-    /// End of an if expression.
-    EndIf,
-    /// Marks the beginning of the else_branch in an if expression.
-    Else,
+    /// Ending of a block expression.
+    EndBlock,
     /// A boolean true.
     True,
     /// A boolean false.
@@ -62,17 +64,18 @@ impl Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Keyword::If => write!(f, "if"),
+            Keyword::Else => write!(f, "else"),
+            Keyword::EndIf => write!(f, "endif"),
             Keyword::Let => write!(f, "let"),
             Keyword::For => write!(f, "for"),
-            Keyword::Include => write!(f, "include"),
             Keyword::In => write!(f, "in"),
             Keyword::EndFor => write!(f, "endfor"),
-            Keyword::EndIf => write!(f, "endif"),
-            Keyword::Else => write!(f, "else"),
-            Keyword::True => write!(f, "true"),
-            Keyword::False => write!(f, "false"),
+            Keyword::Include => write!(f, "include"),
             Keyword::Extends => write!(f, "extends'"),
             Keyword::Block => write!(f, "block"),
+            Keyword::EndBlock => write!(f, "endblock"),
+            Keyword::True => write!(f, "true"),
+            Keyword::False => write!(f, "false"),
         }
     }
 }
