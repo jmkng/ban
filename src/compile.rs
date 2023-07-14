@@ -27,25 +27,34 @@ pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
 /// Keywords recognized by the Lexer and Parser.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Keyword {
-    /// TODO
+    /// Beginning of an if expression.
     If,
-    /// TODO
+    /// Beginning of an assignment.
     Let,
-    /// TODO
+    /// Beginning of a loop.
     For,
-    /// TODO
+    /// Divides the identifier from the context in a loop.
+    ///
+    /// In this example, identifier refers to "person" while context
+    /// refers to "people".
+    ///
+    /// "for person in people"
     In,
-    /// TODO
+    /// Beginning of an include expression.
     Include,
-    /// TODO
+    /// Beginning of an extends expression.
+    Extends,
+    /// Beginning of a block expression.
+    Block,
+    /// End of a loop.
     EndFor,
-    /// TODO
+    /// End of an if expression.
     EndIf,
-    /// TODO
+    /// Marks the beginning of the else_branch in an if expression.
     Else,
-    /// TODO
+    /// A boolean true.
     True,
-    /// TODO
+    /// A boolean false.
     False,
 }
 
@@ -62,6 +71,8 @@ impl Display for Keyword {
             Keyword::Else => write!(f, "else"),
             Keyword::True => write!(f, "true"),
             Keyword::False => write!(f, "false"),
+            Keyword::Extends => write!(f, "extends'"),
+            Keyword::Block => write!(f, "block"),
         }
     }
 }
