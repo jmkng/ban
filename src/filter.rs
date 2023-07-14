@@ -63,16 +63,15 @@ use std::collections::HashMap;
 ///             "Howdy, {}{}",
 ///             input.as_str().unwrap(),
 ///             if self.happy {
-///                 "! Good to see ya! What brings you 'round these parts today?"
+///                 "! Good to see ya!"
 ///             } else {
 ///                 ". What d'ya want?"
 ///             }
 ///         );
 ///
-///         if !args.is_empty() {
-///             greeting.push_str(" -- Well, now, ain't that a fine lookin' horse? ");
-///             greeting.push_str(args.get("1").unwrap().as_str().unwrap())
-///         }
+///         greeting.push_str(" -- Well, now, ain't that a fine lookin' horse? ");
+///         greeting.push_str(args.get("1").unwrap().as_str().unwrap());
+///
 ///         Ok(Value::String(greeting))
 ///     }
 /// }
@@ -88,8 +87,7 @@ use std::collections::HashMap;
 /// // Compile the template.
 /// let template = engine.compile("(( name | cowboyify \"🐴\" ))");
 ///
-/// let expect = "Howdy, taylor! Good to see ya! What brings you 'round these parts today? \
-///              -- Well, now, ain't that a fine lookin' horse? 🐴";
+/// let expect = "Howdy, taylor! Good to see ya! -- Well, now, ain't that a fine lookin' horse? 🐴";
 /// let result = engine.render(template.unwrap(), &context).unwrap();
 ///
 /// // It worked!
