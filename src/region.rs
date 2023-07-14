@@ -1,10 +1,9 @@
+use crate::Error;
 use std::{
     cmp::{max, min},
     fmt::Display,
     ops::{Index, Range},
 };
-
-use crate::error::Error;
 
 /// Represents a region (beginning and ending indices) within some source.
 #[derive(Debug, PartialEq, Copy, Clone)]

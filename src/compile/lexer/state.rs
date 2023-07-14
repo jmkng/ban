@@ -1,4 +1,4 @@
-use super::Token;
+use crate::compile::lexer::Token;
 
 /// Describes the possible Lexer states.
 #[derive(Debug, PartialEq)]

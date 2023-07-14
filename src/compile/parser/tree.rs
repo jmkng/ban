@@ -1,4 +1,4 @@
-use crate::{compile::parser::scope::Scope, region::Region};
+use crate::{Region, Scope};
 use serde_json::Value;
 
 /// The Abstract Syntax Tree.

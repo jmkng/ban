@@ -1,7 +1,8 @@
 mod renderer;
 
-use crate::{compile::Template, context::Context, engine::Engine, error::Error};
 pub use renderer::Renderer;
+
+use crate::{Context, Engine, Error, Template};
 
 /// Render a template.
 ///

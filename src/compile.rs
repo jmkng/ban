@@ -1,11 +1,13 @@
 mod lexer;
+mod parser;
 mod template;
 
-pub use crate::compile::{parser::Parser, parser::Tree, template::Template};
+pub use crate::compile::{
+    parser::{scope::Scope, tree, Parser},
+    template::Template,
+};
 
-pub(crate) mod parser;
-
-use crate::error::Error;
+use crate::Error;
 use std::fmt::Display;
 
 /// Compile a template.

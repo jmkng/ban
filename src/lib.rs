@@ -17,6 +17,11 @@ pub use render::render;
 pub use serde_json::Value;
 pub use syntax::Builder;
 
+pub(crate) use compile::{Parser, Scope, Template};
+pub(crate) use format::Formatter;
+pub(crate) use region::Region;
+pub(crate) use render::Renderer;
+
 use engine::Engine;
 use syntax::Marker;
 

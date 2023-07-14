@@ -4,30 +4,28 @@
 //! a new Template containing the Abstract Syntax Tree.
 //!
 //! This template can be combined with some context data to produce output.
-mod block;
-pub(crate) mod scope;
-mod state;
-pub(crate) mod tree;
+pub mod scope;
+pub mod tree;
 
-use self::{
-    block::Block,
-    tree::{Arguments, Base, Call, Expression, Identifier, Key, Literal, Variable},
-};
-use super::lexer::Token;
-use super::{
-    lexer::{LexResult, LexResultMust, Lexer},
-    template::Template,
-    Keyword, Operator,
-};
+mod block;
+mod state;
+
 use crate::{
-    compile::parser::{scope::Scope, state::State, tree::Output},
-    error::Error,
-    general_error,
-    region::Region,
+    compile::{
+        lexer::{LexResult, LexResultMust, Lexer, Token},
+        parser::{
+            block::Block,
+            state::State,
+            tree::{
+                Arguments, Base, Call, Expression, Identifier, Key, Literal, Output, Tree, Variable,
+            },
+        },
+        Keyword, Operator,
+    },
+    general_error, Error, Region, Scope, Template,
 };
 use serde_json::{Number, Value};
 use std::ops::Range;
-pub use tree::Tree;
 
 pub struct Parser<'source> {
     /// Lexer used to pull from source as tokens instead of raw text.

@@ -1,4 +1,4 @@
-use super::parser::scope::Scope;
+use crate::Scope;
 
 /// Compiled template.
 ///

@@ -1,5 +1,7 @@
-use super::tree::{Expression, LoopVariables};
-use crate::region::Region;
+use crate::{
+    compile::tree::{Expression, LoopVariables},
+    Region,
+};
 
 /// Describes the state of the parser and provides temporary storage for
 /// fragments of larger expressions.

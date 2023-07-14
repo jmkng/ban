@@ -8,13 +8,18 @@
 mod state;
 mod token;
 
-use self::state::State;
-use super::{Keyword, Operator};
-use crate::{general_error, region::Region, Builder, Error};
-use scout::Finder;
 pub use token::Token;
 
+use crate::{
+    compile::{lexer::state::State, Keyword, Operator},
+    general_error, Builder, Error, Region,
+};
+use scout::Finder;
+
+/// TODO
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
+
+/// TODO
 pub type LexResultMust = Result<(Token, Region), Error>;
 
 /// Provides methods to iterate over a source string and receive Token instances

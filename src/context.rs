@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-
+use crate::Error;
 use serde::Serialize;
 use serde_json::{to_value, Value};
-
-use crate::{error::Error, general_error};
+use std::collections::HashMap;
 
 /// Provides storage for data that templates can be rendered against.
 pub struct Context {
@@ -43,7 +41,8 @@ impl Context {
         S: Into<String>,
         T: Serialize,
     {
-        let serialized = to_value(&value).map_err(|_| general_error!("unable to serialize value"));
+        let serialized = to_value(&value)
+            .map_err(|_| Err(Error::General("unable to serialize value".to_string())));
         match serialized {
             Ok(value) => {
                 self.data.insert(key.into(), value);

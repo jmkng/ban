@@ -1,21 +1,12 @@
 use crate::{
     compile::{
-        parser::{
-            scope::Scope,
-            tree::{Arguments, Base, Call, Expression, Key, Output},
-        },
-        Template, Tree,
+        tree::{Arguments, Base, Call, Expression, Key, Output, Tree},
+        Scope, Template,
     },
-    context::Context,
-    engine::Engine,
-    error::Error,
-    format::Formatter,
-    general_error,
-    region::Region,
+    general_error, Context, Engine, Error, Formatter, Region,
 };
 use serde_json::Value;
-use std::fmt::Write;
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
 pub struct Renderer<'source, 'context> {
     /// An engine containing any registered filters.

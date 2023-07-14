@@ -1,12 +1,5 @@
 use std::fmt::Display;
 
-#[macro_export]
-macro_rules! general_error {
-    ($fmt:expr $(, $($args:expr),*)?) => {
-        Err(Error::General(format!($fmt $(, $($args),*)?)))
-    };
-}
-
 /// Represents a custom error type.
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -20,4 +13,11 @@ impl Display for Error {
             Error::General(s) => write!(f, "{s}"),
         }
     }
+}
+
+#[macro_export]
+macro_rules! general_error {
+    ($fmt:expr $(, $($args:expr),*)?) => {
+        Err(Error::General(format!($fmt $(, $($args),*)?)))
+    };
 }

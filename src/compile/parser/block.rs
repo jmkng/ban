@@ -1,4 +1,4 @@
-use super::tree::{Expression, LoopVariables};
+use crate::compile::tree::{Expression, LoopVariables};
 
 /// Represents a fragment of a parsed block.
 pub enum Block {

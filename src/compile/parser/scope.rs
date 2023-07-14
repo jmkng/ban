@@ -1,4 +1,4 @@
-use super::tree::Tree;
+use crate::compile::tree::Tree;
 
 /// A distinct set of Tree instances.
 #[derive(Debug, Clone)]

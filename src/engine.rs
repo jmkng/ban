@@ -1,11 +1,4 @@
-//! Contains the Ash type, which is the main entry point.
-use crate::{
-    compile::{Parser, Template},
-    context::Context,
-    general_error,
-    render::Renderer,
-    Error, Filter,
-};
+use crate::{general_error, Context, Error, Filter, Parser, Renderer, Template};
 use std::collections::HashMap;
 
 /// Ash entry point.
