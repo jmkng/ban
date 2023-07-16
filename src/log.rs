@@ -1,10 +1,7 @@
 mod error;
 mod visual;
 
-pub use error::{
-    expected_keyword, expected_operator, Error, INVALID_FILTER, INVALID_SYNTAX, UNDELIMITED_STRING,
-    UNEXPECTED_CHAR, UNEXPECTED_EOF, UNEXPECTED_TOKEN,
-};
+pub use error::*;
 pub use visual::{Pointer, Visual};
 
 const RED: &str = "\x1B[31m";

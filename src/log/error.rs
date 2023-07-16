@@ -1,13 +1,13 @@
-use super::{visual::Visual, RED, RESET};
-use crate::compile::token::Token;
 use std::fmt::{Debug, Display, Formatter, Result};
 
+use crate::{compile::token::Token, Visual};
+
+use super::{RED, RESET};
+
 pub const UNEXPECTED_TOKEN: &str = "unexpected token";
-pub const UNEXPECTED_CHAR: &str = "unexpected character";
 pub const UNEXPECTED_EOF: &str = "unexpected eof";
 pub const INVALID_SYNTAX: &str = "invalid syntax";
 pub const INVALID_FILTER: &str = "invalid filter";
-pub const UNDELIMITED_STRING: &str = "undelimited string";
 
 /// An error type that optionally supports printing a visualization.
 pub struct Error {
@@ -137,8 +137,6 @@ impl Display for Error {
         let header = format!("{RED}error{RESET}");
         write!(f, "{header}: {}", self.reason)?;
 
-        // write template name here, if we have it
-
         if self.visual.is_some() && f.alternate() {
             return self.visual.as_ref().unwrap().display(
                 f,
@@ -146,8 +144,6 @@ impl Display for Error {
                 self.help.as_deref(),
             );
         }
-
-        // write help here, if we have it
 
         Ok(())
     }
@@ -185,13 +181,13 @@ mod tests {
     #[test]
     fn test_syntax_error() {
         let source = "(* update name *)";
-        let region = Region::new(3..4);
+        let region = Region::new(3..9);
 
         let error = Error::build("unexpected keyword")
             .visual(Pointer::new(source, region))
             .template("template.txt")
             .help("expected one of \"if\", \"let\", \"for\"");
 
-        println!("{:#}", error)
+        // println!("{:#}", error)
     }
 }

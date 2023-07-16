@@ -1,4 +1,4 @@
-use crate::{log::INVALID_FILTER, Error, Filter, Parser, Renderer, Store, Template};
+use crate::{filter::Filter, log::INVALID_FILTER, Error, Parser, Renderer, Store, Template};
 use std::collections::HashMap;
 
 /// Ash entry point.
@@ -13,6 +13,14 @@ pub struct Engine<'source> {
 }
 
 impl<'source> Engine<'source> {
+    #[inline]
+    pub fn new() -> Self {
+        todo!()
+
+        // This function will accept and use a Syntax to parse templates,
+        // but isn't implemented yet.
+    }
+
     /// Compile a new Template.
     #[inline]
     pub fn compile(&self, text: &'source str) -> Result<Template<'source>, Error> {
@@ -36,7 +44,10 @@ impl<'source> Engine<'source> {
     {
         let as_string = name.to_string();
         if self.filters.get(&as_string).is_some() {
-            return Err(Error::build(INVALID_FILTER).help(format!("filter with name `{name}` already exists in engine, overwrite it with `.add_filter_must`")));
+            return Err(Error::build(INVALID_FILTER).help(format!(
+                "filter with name `{name}` already exists in engine, \
+                overwrite it with `.add_filter_must`"
+            )));
         }
         self.filters.insert(as_string, Box::new(filter));
         Ok(())
@@ -53,6 +64,36 @@ impl<'source> Engine<'source> {
         self.filters.insert(name.to_string(), Box::new(filter));
     }
 
+    /// Add a Filter.
+    ///
+    /// Returns the Engine, so additional methods may be chained.
+    ///
+    /// # Errors
+    ///
+    /// If a Filter with the given name already exists in the engine, an error is returned.
+    #[inline]
+    pub fn with_filter<T>(mut self, name: &str, filter: T) -> Result<Self, Error>
+    where
+        T: Filter + 'static,
+    {
+        self.add_filter(name, filter)?;
+        Ok(self)
+    }
+
+    /// Add a Filter.
+    ///
+    /// Returns the Engine, so additional methods may be chained.
+    ///
+    /// If a Filter with the given name already exists in the engine, it is overwritten.
+    #[inline]
+    pub fn with_filter_must<T>(mut self, name: &str, filter: T) -> Self
+    where
+        T: Filter + 'static,
+    {
+        self.add_filter_must(name, filter);
+        self
+    }
+
     /// Return the filter with the given name, if it exists in Engine.
     #[inline]
     pub fn get_filter(&self, name: &'source str) -> Option<&Box<dyn Filter>> {
@@ -66,5 +107,65 @@ impl<'source> Default for Engine<'source> {
             filters: HashMap::new(),
             templates: HashMap::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{engine::Engine, Error};
+    use serde_json::Value;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_add() {
+        let mut engine = Engine::default();
+        engine.add_filter_must("faux", faux_filter_a);
+
+        assert!(engine.get_filter("faux").is_some());
+        assert!(engine.get_filter("ghost").is_none())
+    }
+
+    #[test]
+    fn test_add_fluent() {
+        assert!(Engine::default()
+            .with_filter("faux", faux_filter_a)
+            .unwrap()
+            .get_filter("faux")
+            .is_some());
+        assert!(Engine::default().get_filter("ghost").is_none());
+    }
+
+    #[test]
+    fn test_add_duplicate() {
+        assert!(Engine::default()
+            .with_filter_must("faux", faux_filter_a)
+            .with_filter("faux", faux_filter_a)
+            .is_err())
+    }
+
+    #[test]
+    fn test_add_overwrite() {
+        let value = Value::Null;
+        let arguments = HashMap::new();
+
+        let mut engine = Engine::default().with_filter_must("faux", faux_filter_a);
+        assert!(engine.get_filter("faux").is_some_and(|f| f
+            .apply(&value, &arguments)
+            .is_ok_and(|v| v == Value::String("a".into()))));
+
+        engine.add_filter_must("faux", faux_filter_b);
+        assert!(engine.get_filter("faux").is_some_and(|f| f
+            .apply(&value, &arguments)
+            .is_ok_and(|v| v == Value::String("b".into()))));
+    }
+
+    /// A Filter used to test Engine.
+    fn faux_filter_a(_: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+        Ok(Value::String("a".into()))
+    }
+
+    /// A Filter used to test Engine.
+    fn faux_filter_b(_: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+        Ok(Value::String("b".into()))
     }
 }

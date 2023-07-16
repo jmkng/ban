@@ -51,51 +51,139 @@ use std::collections::HashMap;
 /// Implementing a filter which displays a western greeting:
 ///
 /// ```
-/// use ash::{Store, Error, Filter, Value};
+/// use ash::{
+///    serde_json::{json, Value},
+///    Error, Filter, Store,
+/// };
 /// use std::collections::HashMap;
 ///
-/// struct Cowboyify {
-///     happy: bool,
-/// }
-///
-/// impl Filter for Cowboyify {
-///     fn apply(&self, input: &Value, args: &HashMap<String, Value>) -> Result<Value, Error> {
-///         let mut greeting = format!(
-///             "Howdy, {}{}",
-///             input.as_str().unwrap(),
-///             if self.happy {
-///                 "! Good to see ya!"
-///             } else {
-///                 ". What d'ya want?"
-///             }
-///         );
-///
-///         greeting.push_str(" -- Well, now, ain't that a fine lookin' horse? ");
-///         greeting.push_str(args.get("1").unwrap().as_str().unwrap());
-///
-///         Ok(Value::String(greeting))
+/// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+///     match value {
+///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
+///         _ => Err(Error::build("filter `to_lowercase` requires string input")),
 ///     }
 /// }
 ///
-/// // Set up the engine.
-/// let mut engine = ash::new();
-/// engine.add_filter_must("cowboyify", Cowboyify { happy: true });
+/// let mut engine = ash::new()
+///     .with_filter_must("to_lowercase", to_lowercase);
 ///
-/// // Build up a Store that has a "name" key.
-/// let mut store = Store::new();
-/// store.insert_must("name", "taylor");
+/// let result = engine.render(
+///     engine
+///         .compile("(( name | to_lowercase ))")
+///         .unwrap(),
+///     &Store::new().with_must("name", "TAYLOR"),
+/// );
 ///
-/// // Compile the template.
-/// let template = engine.compile("(( name | cowboyify \"🐴\" ))");
-///
-/// let expect = "Howdy, taylor! Good to see ya! -- Well, now, ain't that a fine lookin' horse? 🐴";
-/// let result = engine.render(template.unwrap(), &store).unwrap();
-///
-/// // It worked!
-/// println!("{}", result);
-/// assert_eq!(result, expect)
+/// assert_eq!(result.unwrap(), "taylor")
 /// ```
-pub trait Filter {
+pub trait Filter: Sync + Send {
     /// Execute the filter with the given input, and return a new Value as output.
     fn apply(&self, input: &Value, args: &HashMap<String, Value>) -> Result<Value, Error>;
+}
+
+// Allows assignment of any function matching the signature of `apply` as a Filter
+// to Engine, instead of requiring a struct be created.
+impl<F> Filter for F
+where
+    F: Fn(&Value, &HashMap<String, Value>) -> Result<Value, Error> + Sync + Send,
+{
+    fn apply(&self, value: &Value, args: &HashMap<String, Value>) -> Result<Value, Error> {
+        self(value, args)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{engine::Engine, Error, Store};
+    use serde_json::{json, Value};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_call_chain() {
+        let engine = get_test_engine();
+        let result = engine.render(
+            engine
+                .compile("(( name | to_lowercase | left 3 ))")
+                .unwrap(),
+            &Store::new().with_must("name", "TAYLOR"),
+        );
+
+        assert_eq!(result.unwrap(), "tay");
+    }
+
+    #[test]
+    fn test_call_chain_error() {
+        let engine = get_test_engine();
+        let result = engine.render(
+            engine
+                .compile("(( name | to_lowercase | left \"10\" ))")
+                .unwrap(),
+            &Store::new().with_must("name", "TAYLOR"),
+        );
+
+        // println!("{:#}", result.unwrap_err());
+        assert!(result.is_err());
+    }
+
+    /// Return a new Engine equipped with test filters.
+    fn get_test_engine() -> Engine<'static> {
+        Engine::default()
+            .with_filter_must("to_lowercase", to_lowercase)
+            .with_filter_must("left", left)
+    }
+
+    /// Lowercase the given value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an Error if the Value is not of type String.
+    fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+        match value {
+            Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
+            _ => Err(Error::build("filter `to_lowercase` requires string input")),
+        }
+    }
+
+    /// Return the first n characters of the input Value from the left,
+    /// where n is the value of the argument.
+    ///
+    /// Similar to TSQL `LEFT`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an Error if the input is not a string, more than one
+    /// argument is provided, or the argument is not a number.
+    fn left(value: &Value, args: &HashMap<String, Value>) -> Result<Value, Error> {
+        let arg_len = args.len();
+        if arg_len != 1 {
+            return Err(Error::build(format!(
+                "filter `left` expects `1` argument, received `{arg_len}`"
+            )));
+        }
+
+        match value {
+            Value::String(string) => {
+                let n = args.values().next().unwrap();
+
+                match n {
+                    Value::Number(number) => match number.as_u64() {
+                        Some(u64) => {
+                            let n_left = string.chars().take(u64 as usize).collect::<String>();
+                            Ok(json!(n_left))
+                        }
+                        None => Err(Error::build(format!(
+                            "filter `left` expects an integer (not a float) that fits in u64, \
+                            `{}` is invalid",
+                            number
+                        ))),
+                    },
+                    _ => Err(Error::build(format!(
+                        "filter `left` expects a number argument, received `{}`",
+                        n,
+                    ))),
+                }
+            }
+            _ => Err(Error::build("filter `left` expects string input")),
+        }
+    }
 }

@@ -103,7 +103,6 @@ impl<'a> Builder<'a> {
     pub fn expression(&mut self, begin_expr: &'a str, end_expr: &'a str) -> &mut Self {
         assert!(!begin_expr.is_empty() && !end_expr.is_empty());
         self.expression = (begin_expr, end_expr);
-
         self
     }
 
@@ -112,7 +111,6 @@ impl<'a> Builder<'a> {
     pub fn block(&mut self, begin_block: &'a str, end_block: &'a str) -> &mut Self {
         assert!(!begin_block.is_empty() && !end_block.is_empty());
         self.block = (begin_block, end_block);
-
         self
     }
 
@@ -121,7 +119,6 @@ impl<'a> Builder<'a> {
     pub fn whitespace(&mut self, whitespace_tag: &'a char) -> &mut Self {
         assert!(!whitespace_tag.is_whitespace());
         self.whitespace = whitespace_tag;
-
         self
     }
 

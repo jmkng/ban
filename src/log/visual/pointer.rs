@@ -1,13 +1,11 @@
-use std::{
-    cmp::max,
-    fmt::{Formatter, Result},
-};
-
-use crate::region::Region;
-
 use super::{
     super::{RESET, YELLOW},
     {get_line_and_column, get_width, Visual, BLANK, EQUAL, HIGHLIGHT, PIPE},
+};
+use crate::region::Region;
+use std::{
+    cmp::max,
+    fmt::{Formatter, Result},
 };
 
 #[derive(Debug, PartialEq)]

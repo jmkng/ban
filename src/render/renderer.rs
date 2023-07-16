@@ -115,6 +115,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
             call_stack.push(call);
             begin = &call.receiver;
         }
+
         let mut value = match begin {
             Expression::Base(base) => self.render_base(base)?,
             _ => unreachable!(),
@@ -128,8 +129,8 @@ impl<'source, 'store> Renderer<'source, 'store> {
                     .visual(Pointer::new(self.template.source, call.name.region))
                     .help(format!(
                         "template wants to use the `{name_literal}` filter, but a filter with that \
-                        name was not found in this engine, did you add the filter with either `.add_filter` \
-                        or `.add_filter_must`?"
+                        name was not found in this engine, did you add the filter to the engine with \
+                        `.add_filter` or `.add_filter_must`?"
                     )));
             }
 
@@ -139,7 +140,11 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 HashMap::new()
             };
 
-            let returned = func.unwrap().apply(&value, &arguments)?;
+            let returned = func
+                .unwrap()
+                .apply(&value, &arguments)
+                .or_else(|e| Err(e.visual(Pointer::new(self.template.source, call.name.region))))?;
+
             value = Cow::Owned(returned);
         }
 
@@ -171,12 +176,12 @@ impl<'source, 'store> Renderer<'source, 'store> {
             .expect("key vector should always have at least one key")
             .get_region();
         let first_value = first_region.literal(self.template.source)?;
-
-        // TODO Maybe error here instead. No config supported yet.
         let store_value = self.store.get(first_value);
         let mut value: Cow<Value> = if store_value.is_some() {
             Cow::Borrowed(store_value.unwrap())
         } else {
+            // TODO Maybe error here instead of returning a null value,
+            // but it should probably be configurable.
             Cow::Owned(Value::Null)
         };
 
@@ -190,6 +195,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
                     value = if next_object.is_some() {
                         Cow::Owned(next_object.unwrap().clone())
                     } else {
+                        // TODO See TODO above ^
                         Cow::Owned(Value::Null)
                     };
                 }

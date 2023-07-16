@@ -3,13 +3,13 @@ use std::fmt::{Arguments, Display, Result, Write};
 
 /// Wraps some underlying buffer by providing methods that write to it
 /// in different formats.
-pub struct Pipe<'a> {
-    buffer: &'a mut (dyn Write + 'a),
+pub struct Pipe<'buffer> {
+    buffer: &'buffer mut (dyn Write + 'buffer),
 }
 
-impl<'a> Pipe<'a> {
+impl<'buffer> Pipe<'buffer> {
     /// Create a new Pipe that writes to the given buffer.
-    pub fn new(buffer: &'a mut String) -> Self {
+    pub fn new(buffer: &'buffer mut String) -> Self {
         Self { buffer }
     }
 
@@ -24,10 +24,9 @@ impl<'a> Pipe<'a> {
     pub fn write_value(&mut self, value: &Value) -> Result {
         match value {
             Value::Null => self.write_null(),
+            Value::String(string) => self.write_str(string),
             Value::Array(array) => self.write_array(array),
             Value::Object(object) => self.write_object(object),
-            // Writing strings with write_str will prevent the quotes from being included:
-            Value::String(string) => self.write_str(string),
             _ => self.write_display(value),
         }
     }

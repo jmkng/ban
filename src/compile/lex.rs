@@ -11,7 +11,7 @@ mod state;
 
 use crate::{
     compile::{lex::state::State, token::Token, Keyword, Operator},
-    log::{expected_operator, UNDELIMITED_STRING, UNEXPECTED_CHAR, UNEXPECTED_TOKEN},
+    log::{expected_operator, INVALID_SYNTAX, UNEXPECTED_TOKEN},
     Builder, Error, Pointer, Region,
 };
 use scout::Finder;
@@ -145,7 +145,7 @@ impl<'source> Lexer<'source> {
                     // Below characters could mean one thing or another depending on the character
                     // after it, lex_operator will figure it out and return the right thing.
                     '=' | '!' | '>' | '<' | '|' | '&' => self.lex_operator(iterator, index, char),
-                    _ => Err(Error::build(UNEXPECTED_CHAR)
+                    _ => Err(Error::build(UNEXPECTED_TOKEN)
                         .visual(Pointer::new(self.source, (index..index + 1).into()))
                         .help(
                             "expected one of `*`, `+`, `/`, `-`, `.`, `:`, an identifier, \
@@ -270,9 +270,9 @@ impl<'source> Lexer<'source> {
                         .get(from..take)
                         .expect("valid error must contain range");
 
-                    return Err(Error::build(UNDELIMITED_STRING)
+                    return Err(Error::build(INVALID_SYNTAX)
                         .visual(Pointer::new(self.source, (from..take).into()))
-                        .help("try closing the string with `\"`"));
+                        .help("this might be an undelimited string, try closing it with `\"`"));
                 }
             }
         }

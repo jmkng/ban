@@ -23,7 +23,7 @@ use crate::{
         },
         Keyword, Operator,
     },
-    log::{expected_keyword, INVALID_SYNTAX, UNEXPECTED_CHAR, UNEXPECTED_EOF, UNEXPECTED_TOKEN},
+    log::{expected_keyword, INVALID_SYNTAX, UNEXPECTED_EOF, UNEXPECTED_TOKEN},
     Error, Pointer, Region, Scope, Template,
 };
 use serde_json::{Number, Value};
