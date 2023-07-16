@@ -3,33 +3,30 @@ use crate::{
         tree::{Arguments, Base, Call, Expression, Key, Output, Tree},
         Scope, Template,
     },
-    Context, Engine, Error, Formatter, Region,
+    log::INVALID_FILTER,
+    Engine, Error, Pipe, Pointer, Region, Store,
 };
 use serde_json::Value;
 use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
-pub struct Renderer<'source, 'context> {
+pub struct Renderer<'source, 'store> {
     /// An engine containing any registered filters.
     engine: &'source Engine<'source>,
     /// The template being rendered.
     template: Template<'source>,
-    /// The context data that the template is checked against.
-    context: &'context Context,
+    /// The Store that the Template is rendered with.
+    store: &'store Store,
     /// Storage for Block tags.
     blocks: Vec<(String, Scope)>,
 }
 
-impl<'source, 'context> Renderer<'source, 'context> {
+impl<'source, 'store> Renderer<'source, 'store> {
     /// Create a new Renderer.
-    pub fn new(
-        engine: &'source Engine,
-        template: Template<'source>,
-        context: &'context Context,
-    ) -> Self {
+    pub fn new(engine: &'source Engine, template: Template<'source>, store: &'store Store) -> Self {
         Renderer {
             engine,
             template,
-            context,
+            store,
             blocks: vec![],
         }
     }
@@ -38,28 +35,32 @@ impl<'source, 'context> Renderer<'source, 'context> {
     ///
     /// # Errors
     ///
-    /// TODO
+    /// Returns an Error if rendering any of the Tree instances within the Template
+    /// fails, or writing the rendered Tree to the buffer fails.
     pub fn render(&mut self) -> Result<String, Error> {
         let mut buffer = String::with_capacity(self.template.source.len());
-        let mut formatter = Formatter::new(&mut buffer);
+        let mut pipe = Pipe::new(&mut buffer);
 
-        let mut tokens = self.template.scope.tokens.iter();
+        let mut tokens = self.template.scope.data.iter();
         while let Some(next) = tokens.next() {
             match next {
                 Tree::Raw(raw) => {
                     let value = self.render_raw(raw)?;
-                    formatter.write_str(value)
+                    pipe.write_str(value)
                 },
                 Tree::Output(output) => {
                     let value = self.render_output(output)?;
-                    formatter.write_value(&value)
+                    pipe.write_value(&value)
                 },
                 _ => todo!()
                 // Tree::Include(_) => todo!(),
                 // Tree::IfElse(_) => todo!(),
                 // Tree::ForLoop(_) => todo!(),
             }
-            .map_err(|_| Error::General("io error, failed to write to buffer".to_string()))?;
+            .map_err(|_| {
+                Error::build("write failure")
+                    .help("unable to continue rendering, system may be low on memory")
+            })?;
         }
 
         Ok(buffer)
@@ -69,7 +70,7 @@ impl<'source, 'context> Renderer<'source, 'context> {
     ///
     /// # Errors
     ///
-    /// TODO
+    /// Returns an Error if rendering the Output fails.
     fn render_output(&self, output: &'source Output) -> Result<Cow<Value>, Error> {
         match &output.expression {
             Expression::Base(base) => self.render_base(base),
@@ -79,13 +80,11 @@ impl<'source, 'context> Renderer<'source, 'context> {
 
     /// Render a Base.
     ///
-    /// TODO
-    ///
     /// # Errors
     ///
-    /// TODO
-    fn render_base(&self, output: &'source Base) -> Result<Cow<Value>, Error> {
-        match output {
+    /// Returns an Error if rendering the Base fails.
+    fn render_base(&self, base: &'source Base) -> Result<Cow<Value>, Error> {
+        match base {
             Base::Variable(variable) => self.eval_keys(&variable.path),
             Base::Literal(literal) => Ok(Cow::Borrowed(&literal.value)),
         }
@@ -103,8 +102,12 @@ impl<'source, 'context> Renderer<'source, 'context> {
     ///
     /// # Errors
     ///
-    /// TODO
-    fn render_call(&self, call: &'source Call) -> Result<Cow<Value>, Error> {
+    /// Returns an Error in these cases:
+    ///
+    /// - Rendering the Base of the Call chain fails.
+    /// - Executing a Filter returns an Error.
+    /// -
+    fn render_call(&self, call: &'store Call) -> Result<Cow<Value>, Error> {
         let mut call_stack = vec![call];
         let mut begin: &Expression = &call.receiver;
 
@@ -113,20 +116,21 @@ impl<'source, 'context> Renderer<'source, 'context> {
             begin = &call.receiver;
         }
         let mut value = match begin {
-            Expression::Base(base) => self.render_base(base),
+            Expression::Base(base) => self.render_base(base)?,
             _ => unreachable!(),
-        }?;
+        };
 
         for call in call_stack.iter().rev() {
             let name_literal = call.name.region.literal(self.template.source)?;
             let func = self.engine.get_filter(name_literal);
             if func.is_none() {
-                return Err(Error::General(format!(
-                    "template has requested to use the filter `{}`, \
-                    but filter is not registered in the engine, \
-                    did you register the filter with [.add_filter | .add_filter_must]?",
-                    name_literal
-                )));
+                return Err(Error::build(INVALID_FILTER)
+                    .visual(Pointer::new(self.template.source, call.name.region))
+                    .help(format!(
+                        "template wants to use the `{name_literal}` filter, but a filter with that \
+                        name was not found in this engine, did you add the filter with either `.add_filter` \
+                        or `.add_filter_must`?"
+                    )));
             }
 
             let arguments = if call.arguments.is_some() {
@@ -135,11 +139,7 @@ impl<'source, 'context> Renderer<'source, 'context> {
                 HashMap::new()
             };
 
-            let returned = func
-                .unwrap()
-                .apply(&value, &arguments)
-                .map_err(|s| Error::General(s.to_string()))?;
-
+            let returned = func.unwrap().apply(&value, &arguments)?;
             value = Cow::Owned(returned);
         }
 
@@ -153,16 +153,18 @@ impl<'source, 'context> Renderer<'source, 'context> {
     ///
     /// # Errors
     ///
-    /// TODO
+    /// Returns an Error if accessing the literal value of the Region fails.
     fn render_raw(&self, region: &Region) -> Result<&str, Error> {
         Ok(region.literal(self.template.source)?)
     }
 
-    /// Get the Value from the Context which is identified by the given Keys.
+    /// Return the Value from the Store that exists at the path identified
+    /// by the given keys.
     ///
     /// # Errors
     ///
-    /// TODO
+    /// Returns an Error when accessing the literal value of the Region
+    /// from any of the Key instances fails.
     fn eval_keys(&self, keys: &Vec<Key>) -> Result<Cow<Value>, Error> {
         let first_region = keys
             .first()
@@ -171,9 +173,9 @@ impl<'source, 'context> Renderer<'source, 'context> {
         let first_value = first_region.literal(self.template.source)?;
 
         // TODO Maybe error here instead. No config supported yet.
-        let context_value = self.context.get(first_value);
-        let mut value: Cow<Value> = if context_value.is_some() {
-            Cow::Borrowed(context_value.unwrap())
+        let store_value = self.store.get(first_value);
+        let mut value: Cow<Value> = if store_value.is_some() {
+            Cow::Borrowed(store_value.unwrap())
         } else {
             Cow::Owned(Value::Null)
         };

@@ -4,12 +4,12 @@ use serde_json::{to_value, Value};
 use std::collections::HashMap;
 
 /// Provides storage for data that templates can be rendered against.
-pub struct Context {
+pub struct Store {
     data: HashMap<String, Value>,
 }
 
-impl Context {
-    /// Create a new Context.
+impl Store {
+    /// Create a new Store.
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -17,7 +17,7 @@ impl Context {
         }
     }
 
-    /// Insert the value into the Context.
+    /// Insert the value into the Store.
     ///
     /// # Panics
     ///
@@ -31,7 +31,7 @@ impl Context {
         self.data.insert(key.into(), to_value(value).unwrap());
     }
 
-    /// Insert the value into the Context.
+    /// Insert the value into the Store.
     ///
     /// # Errors
     ///
@@ -41,8 +41,9 @@ impl Context {
         S: Into<String>,
         T: Serialize,
     {
-        let serialized = to_value(&value)
-            .map_err(|_| Err(Error::General("unable to serialize value".to_string())));
+        let serialized = to_value(&value).map_err(
+            |_| /*Err(Error::General("unable to serialize value".to_string()))TODO: ERROR*/todo!(),
+        );
         match serialized {
             Ok(value) => {
                 self.data.insert(key.into(), value);

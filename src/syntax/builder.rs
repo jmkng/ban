@@ -1,26 +1,32 @@
 use scout::Syntax;
 
-/// Defines the delimiters that identify blocks and expressions within templates.
+/// Delimiters that identify blocks and expressions within templates.
 ///
 /// The actual value of each marker (custom delimiters) can be set by way of the
 /// Builder type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Marker {
-    /// TODO
+    /// Beginning of an Expression, which allows for outputting content
+    /// and passing data through filters.
     BeginExpression = 0,
-    /// TODO
+    /// End of an Expression.
     EndExpression = 1,
-    /// TODO
+    /// Same as BeginExpression, but causes the trailing whitespace of the
+    /// preceding raw text to be removed.
     BeginExpressionTrim = 2,
-    /// TODO
+    /// Same as EndExpression, but causes the leading whitespace of the
+    /// following raw text to be removed.
     EndExpressionTrim = 3,
-    /// TODO
+    /// Beginning of a Block, which allows for logical constructs such
+    /// as "if", "let" and "for".
     BeginBlock = 4,
-    /// TODO
+    /// End of a Block.
     EndBlock = 5,
-    /// TODO
+    /// Same as BeginBlock, but causes the trailing whitespace of the
+    /// preceding raw text to be removed.
     BeginBlockTrim = 6,
-    /// TODO
+    /// Same as EndBlock, but causes the leading whitespace of the
+    /// following raw text to be removed.
     EndBlockTrim = 7,
 }
 

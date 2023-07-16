@@ -31,11 +31,13 @@ pub enum Token {
     Period,
     /// |
     Pipe,
+    /// !
+    Exclamation,
     /// :
     Colon,
     /// A recognized "special" keyword that begins a certain type of block.
     Keyword(Keyword),
-    /// An operator akin to
+    /// Describes an action taken on two values.
     Operator(Operator),
 }
 
@@ -74,6 +76,7 @@ impl Display for Token {
             Token::Keyword(keyword) => write!(f, "keyword {keyword}"),
             Token::Operator(operator) => write!(f, "operator {operator}"),
             Token::Pipe => write!(f, "pipe (|)"),
+            Token::Exclamation => write!(f, "exclamation (!)"),
             Token::Colon => write!(f, "colon (:)"),
         }
     }

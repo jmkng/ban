@@ -1,9 +1,10 @@
-mod lexer;
-mod parser;
+mod lex;
+mod parse;
 mod template;
 
 pub use crate::compile::{
-    parser::{scope::Scope, tree, Parser},
+    lex::token,
+    parse::{scope::Scope, tree, Parser},
     template::Template,
 };
 
@@ -16,7 +17,7 @@ use std::fmt::Display;
 /// an Engine.
 ///
 /// If you create a Template that relies on custom filter functions,
-/// you will need to use [ash::new()] to create an Engine instance
+/// you will need to use [`crate::new()`] to create an Engine instance
 /// which can store your filters.
 ///
 /// This Engine should also be used to perform the render.
@@ -37,9 +38,9 @@ pub enum Keyword {
     Let,
     /// Beginning of a loop.
     For,
-    /// Divides the identifier from the context in a loop.
+    /// Divides the identifier from the keys in a loop.
     ///
-    /// In this example, identifier refers to "person" while context
+    /// In this example, identifier refers to "person" while keys
     /// refers to "people":
     ///
     /// "for person in people"

@@ -1,4 +1,4 @@
-use crate::Error;
+use crate::{log::INVALID_SYNTAX, Error, Pointer};
 use std::{
     cmp::{max, min},
     fmt::Display,
@@ -64,13 +64,14 @@ impl Region {
     /// # Errors
     ///
     /// Returns an Error if the Region is out of bounds in the given source text.
-    pub fn literal<'source>(&self, text: &'source str) -> Result<&'source str, Error> {
-        text.get(self.begin..self.end).ok_or_else(|| {
-            Error::General(format!(
-                "unable to locate literal value in source text at {}, \
-                was the source modified after template compilation?",
-                self
-            ))
+    pub fn literal<'source>(&self, source: &'source str) -> Result<&'source str, Error> {
+        source.get(self.begin..self.end).ok_or_else(|| {
+            Error::build(INVALID_SYNTAX)
+                .visual(Pointer::new(source, (self.begin..self.end).into()))
+                .help(
+                    "unable to locate literal value in source text, was the source modified \
+                    after template compilation?",
+                )
         })
     }
 }

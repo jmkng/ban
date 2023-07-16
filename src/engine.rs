@@ -1,26 +1,16 @@
-use crate::{Context, Error, Filter, Parser, Renderer, Template};
+use crate::{log::INVALID_FILTER, Error, Filter, Parser, Renderer, Store, Template};
 use std::collections::HashMap;
 
 /// Ash entry point.
 ///
 /// Allows registering filters, compiling Template instances from strings,
-/// and rendering Template instances with some context data.
+/// and rendering Template instances with some Store data.
 pub struct Engine<'source> {
     /// Filters that this engine is aware of.
     filters: HashMap<String, Box<dyn Filter>>,
     /// Templates that this Engine is aware of.
     templates: HashMap<String, Template<'source>>,
 }
-
-/// Register a filter with Tera.
-///
-/// If a filter with that name already exists, it will be overwritten
-///
-/// ```no_compile
-/// tera.register_filter("upper", string::upper);
-/// ```
-// pub fn register_filter<F: Filter + 'static>(&mut self, name: &str, filter: F) {
-//     s
 
 impl<'source> Engine<'source> {
     /// Compile a new Template.
@@ -29,10 +19,10 @@ impl<'source> Engine<'source> {
         Parser::new(text).compile()
     }
 
-    /// Render a Template against the given Context.
+    /// Render a Template with the given Store.
     #[inline]
-    pub fn render(&self, template: Template, context: &Context) -> Result<String, Error> {
-        Renderer::new(self, template, context).render()
+    pub fn render(&self, template: Template, store: &Store) -> Result<String, Error> {
+        Renderer::new(self, template, store).render()
     }
 
     /// Add a Filter.
@@ -46,9 +36,7 @@ impl<'source> Engine<'source> {
     {
         let as_string = name.to_string();
         if self.filters.get(&as_string).is_some() {
-            return Err(Error::General(format!(
-                "filter with name {name} already exists in engine"
-            )));
+            return Err(Error::build(INVALID_FILTER).help(format!("filter with name `{name}` already exists in engine, overwrite it with `.add_filter_must`")));
         }
         self.filters.insert(as_string, Box::new(filter));
         Ok(())

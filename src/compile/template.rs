@@ -2,7 +2,7 @@ use crate::Scope;
 
 /// Compiled template.
 ///
-/// May be rendered with some context data to generate output.
+/// May be rendered with some Store data to generate output.
 #[derive(Debug, Clone)]
 pub struct Template<'source> {
     /// The Abstract Syntax Tree generated during compilation.

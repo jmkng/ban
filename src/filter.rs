@@ -12,7 +12,7 @@
 //!
 //! The "name" value is not quoted, and so it is perceived to be an identifier
 //! and not a literal. Upon rendering this expression, Ash will search the
-//! context for an entry with a key of "name" and use the value as the input
+//! Store for an entry with a key of "name" and use the value as the input
 //! for the first filter in the chain.
 //!
 //! The vertical pipe "|" denotes that the following identifier is the name of
@@ -40,7 +40,8 @@ use crate::Error;
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// Trait which all filter functions must implement.
+/// Describes a type which can be created and stored within an Engine,
+/// and used to transform input in an Expression.
 ///
 /// The input parameter refers to the value that is being operated on,
 /// args may contain any additional values passed to the filter.
@@ -50,7 +51,7 @@ use std::collections::HashMap;
 /// Implementing a filter which displays a western greeting:
 ///
 /// ```
-/// use ash::{Context, Error, Filter, Value};
+/// use ash::{Store, Error, Filter, Value};
 /// use std::collections::HashMap;
 ///
 /// struct Cowboyify {
@@ -80,17 +81,18 @@ use std::collections::HashMap;
 /// let mut engine = ash::new();
 /// engine.add_filter_must("cowboyify", Cowboyify { happy: true });
 ///
-/// // Build up a Context that has a "name" key.
-/// let mut context = Context::new();
-/// context.insert_must("name", "taylor");
+/// // Build up a Store that has a "name" key.
+/// let mut store = Store::new();
+/// store.insert_must("name", "taylor");
 ///
 /// // Compile the template.
 /// let template = engine.compile("(( name | cowboyify \"🐴\" ))");
 ///
 /// let expect = "Howdy, taylor! Good to see ya! -- Well, now, ain't that a fine lookin' horse? 🐴";
-/// let result = engine.render(template.unwrap(), &context).unwrap();
+/// let result = engine.render(template.unwrap(), &store).unwrap();
 ///
 /// // It worked!
+/// println!("{}", result);
 /// assert_eq!(result, expect)
 /// ```
 pub trait Filter {

@@ -1,4 +1,4 @@
-use crate::{Region, Scope};
+use crate::{compile::Operator, Region, Scope};
 use serde_json::Value;
 
 /// The Abstract Syntax Tree.
@@ -20,9 +20,9 @@ pub enum Tree {
 /// or Call variant.
 #[derive(Debug, Clone)]
 pub enum Expression {
-    /// A Simple call to render the named value from the context.
+    /// A Simple call to render the named value from the Store.
     Base(Base),
-    /// A more complex variant which typically retrieves some value from the context and modifies
+    /// A more complex variant which typically retrieves some value from the Store and modifies
     /// it with functions before rendering.
     ///
     /// May also operate on a string literal.
@@ -37,6 +37,23 @@ impl Expression {
             Expression::Call(call) => call.region,
         }
     }
+}
+
+/// Represents a comparison between two Expressions with some Operator.
+///
+/// If the Operator and second Expression (right) are None, the first (left)
+/// Expression may be checked for a "truthy" value.
+pub struct Comparison {
+    /// The Expression to the left of the operator.
+    /// Boolean indicates negation.
+    pub left: (bool, Expression),
+    /// The operator used to compare left and right.
+    pub operator: Option<Operator>,
+    /// The Expression to the right of the operator.
+    /// Boolean indicates negation.
+    pub right: Option<(bool, Expression)>,
+    /// Location of the Comparison.
+    pub region: Region,
 }
 
 /// Represents a call to render some kind of Expression.
@@ -65,12 +82,12 @@ impl From<(Expression, Region)> for Output {
 /// ## Variable
 ///
 /// A variable is an Identifier such as "person.name" which indicates
-/// the location of the true value within the context.
+/// the location of the true value within the Store.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Base {
-    /// TODO
+    /// A value located in the Store.
     Variable(Variable),
-    /// TODO
+    /// A literal value located directly in the template source.
     Literal(Literal),
 }
 
@@ -84,7 +101,7 @@ impl Base {
     }
 }
 
-/// Set of Key instances that can be used to locate data within the context.
+/// Set of Key instances that can be used to locate data within the Store.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     /// TODO

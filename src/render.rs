@@ -2,7 +2,7 @@ mod renderer;
 
 pub use renderer::Renderer;
 
-use crate::{Context, Engine, Error, Template};
+use crate::{Engine, Error, Store, Template};
 
 /// Render a template.
 ///
@@ -11,6 +11,6 @@ use crate::{Context, Engine, Error, Template};
 ///
 /// You may also prefer to create an Engine instance with [ash::new()] if you
 /// would like to make custom filter functions available to your template.
-pub fn render(template: Template, context: &Context) -> Result<String, Error> {
-    Renderer::new(&Engine::default(), template, context).render()
+pub fn render(template: Template, store: &Store) -> Result<String, Error> {
+    Renderer::new(&Engine::default(), template, store).render()
 }
