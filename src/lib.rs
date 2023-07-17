@@ -204,6 +204,7 @@
 //! ...
 //!
 //! 🚧 TODO
+#![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
 #![warn(clippy::missing_docs)]
 #![warn(clippy::missing_docs_in_private_items)]
