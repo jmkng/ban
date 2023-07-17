@@ -1,4 +1,4 @@
-//! Ash lexer.
+//! Ban lexer.
 //!
 //! Provides facilities to iterate over text to produce Token and Region
 //! instances, which are easier for the Parser to operate on than raw text.

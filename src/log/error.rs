@@ -45,7 +45,7 @@ impl Error {
     /// of type Pointer:
     ///
     /// ```rs
-    /// use ash::{Region, Pointer, Error};
+    /// use ban::{Region, Pointer, Error};
     ///
     /// let source = "(* update name *)";
     /// let region = Region::new(3..9);

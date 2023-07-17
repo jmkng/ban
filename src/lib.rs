@@ -1,6 +1,6 @@
 //! A minimal and fast template engine.
 //!
-//! Ash is a template engine that compiles templates at runtime.
+//! Ban is a template engine that compiles templates at runtime.
 //! It supports the basic features you might expect, it's easy to use,
 //! and it tries to provide good error messages.
 //!
@@ -19,7 +19,7 @@
 //! Create a new instance of Engine with [`crate::new()`].
 //!
 //! ```rust
-//! let engine = ash::new();
+//! let engine = ban::new();
 //! ```
 //!
 //! ## Compile
@@ -27,7 +27,7 @@
 //! Use the Engine to create a Template.
 //!
 //! ```rust
-//! let engine = ash::new();
+//! let engine = ban::new();
 //! let template = engine.compile("(( name ))");
 //! assert!(template.is_ok());
 //! ```
@@ -41,9 +41,9 @@
 //! the value of that `name` key.
 //!
 //! ```rust
-//! use ash::Store;
+//! use ban::Store;
 //!
-//! let engine = ash::new();
+//! let engine = ban::new();
 //! let template = engine.compile("(( name ))");
 //!
 //! let mut store = Store::new();
@@ -56,9 +56,9 @@
 //! can be rendered.
 //!
 //! ```rust
-//! use ash::Store;
+//! use ban::Store;
 //!
-//! let engine = ash::new();
+//! let engine = ban::new();
 //! let template = engine.compile("(( name ))");
 //!
 //! let mut store = Store::new();
@@ -75,17 +75,17 @@
 //!
 //! ## Working Without an Engine
 //!
-//! You don't really need to create an Engine if you don't want to, Ash
+//! You don't really need to create an Engine if you don't want to, Ban
 //! exposes some helper methods to compile and render without one.
 //!
-//! You don't have to create an Engine to compile and render, Ash exposes
+//! You don't have to create an Engine to compile and render, Ban exposes
 //! [`crate::compile()`] and [`crate::render()`] to do the same thing.
 //!
 //! ```rust
-//! let template = ash::compile("(( name ))");
+//! let template = ban::compile("(( name ))");
 //! assert!(template.is_ok());
 //!
-//! let result = ash::render(&template.unwrap(), &ash::Store::new().with_must("name", "taylor"));
+//! let result = ban::render(&template.unwrap(), &ban::Store::new().with_must("name", "taylor"));
 //! assert_eq!(result.unwrap(), "taylor");
 //! ```
 //!
@@ -105,7 +105,7 @@
 //! All filter functions must implement this trait:
 //!
 //! ```rust
-//! use ash::{Value, Error};
+//! use ban::{Value, Error};
 //! use std::collections::HashMap;
 //!
 //! pub trait Filter: Sync + Send {
@@ -114,12 +114,12 @@
 //! ```
 //!
 //! You can either create a struct and implement the trait on that, or just create
-//! a function matching the trait signature. Ash will accept both.
+//! a function matching the trait signature. Ban will accept both.
 //!
 //! Let's use a function here:
 //!
 //! ```rust
-//! use ash::{Value, Error, Store, json};
+//! use ban::{Value, Error, Store, json};
 //! use std::collections::HashMap;
 //!
 //! fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
@@ -129,7 +129,7 @@
 //!     }
 //! }
 //!
-//! let engine = ash::new()
+//! let engine = ban::new()
 //!     .with_filter_must("to_lowercase", to_lowercase);
 //!
 //! let template = engine.compile("(( name | to_lowercase ))");
@@ -145,7 +145,7 @@
 //!
 //! # Syntax
 //!
-//! Ash doesn't have a lot of complicated syntax to learn. It should be
+//! Ban doesn't have a lot of complicated syntax to learn. It should be
 //! familiar if you've used any other template engine.
 //!
 //! Note: This library is still in development, so this is all likely to evolve.
@@ -234,7 +234,7 @@ pub(crate) use render::Renderer;
 use engine::Engine;
 use syntax::Marker;
 
-/// Create a new instance of Ash.
+/// Create a new instance of Ban.
 pub fn new<'source>() -> Engine<'source> {
     Engine::default()
 }

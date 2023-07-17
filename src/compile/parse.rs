@@ -1,4 +1,4 @@
-//! Ash parser.
+//! Ban parser.
 //!
 //! Utilizes a Lexer to receive instances of Region, which it uses to construct
 //! a new Template containing the Abstract Syntax Tree.

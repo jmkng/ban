@@ -1,4 +1,4 @@
-//! Ash uses a type known as a Syntax to understand what delimiters
+//! Ban uses a type known as a Syntax to understand what delimiters
 //! you would like to use in your templates. This module defines the
 //! Builder type, which provides methods to easily generate a `Syntax`.
 //!

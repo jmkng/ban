@@ -56,7 +56,7 @@ impl From<Marker> for usize {
 /// # Example
 ///
 /// ```
-/// use ash::Builder;
+/// use ban::Builder;
 ///
 /// let syntax = Builder::new()
 ///     .with_expression("{{", "}}")
@@ -98,7 +98,7 @@ impl<'marker> Builder<'marker> {
     /// # Examples
     ///
     /// ```
-    /// use ash::Builder;
+    /// use ban::Builder;
     ///
     /// let mut builder = Builder::new();
     /// builder.set_expression("{{", "}}");
@@ -113,7 +113,7 @@ impl<'marker> Builder<'marker> {
     /// Returns the Builder, so additional methods may be chained.
     ///
     /// ```
-    /// use ash::Builder;
+    /// use ban::Builder;
     ///
     /// Builder::new()
     ///     .with_expression("{{", "}}");
@@ -129,7 +129,7 @@ impl<'marker> Builder<'marker> {
     /// # Examples
     ///
     /// ```
-    /// use ash::Builder;
+    /// use ban::Builder;
     ///
     /// let mut builder = Builder::new();
     /// builder.set_block("{*", "*}");
@@ -146,7 +146,7 @@ impl<'marker> Builder<'marker> {
     /// # Examples
     ///
     /// ```
-    /// use ash::Builder;
+    /// use ban::Builder;
     ///
     /// Builder::new()
     ///     .with_block("{*", "*}");
@@ -162,7 +162,7 @@ impl<'marker> Builder<'marker> {
     /// # Examples
     ///
     /// ```
-    /// use ash::Builder;
+    /// use ban::Builder;
     ///
     /// let mut builder = Builder::new();
     /// builder.set_whitespace(&'!');
@@ -179,7 +179,7 @@ impl<'marker> Builder<'marker> {
     /// # Examples
     ///
     /// ```
-    /// use ash::Builder;
+    /// use ban::Builder;
     ///
     /// Builder::new()
     ///     .with_whitespace(&'!');
@@ -195,7 +195,7 @@ impl<'marker> Builder<'marker> {
     /// # Examples
     ///
     /// ```
-    /// use ash::Builder;
+    /// use ban::Builder;
     ///
     /// let syntax = Builder::new()
     ///     .with_expression("{{", "}}")

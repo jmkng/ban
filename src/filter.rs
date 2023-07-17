@@ -11,12 +11,12 @@
 //! ```
 //!
 //! The "name" value is not quoted, and so it is perceived to be an identifier
-//! and not a literal. Upon rendering this expression, Ash will search the
+//! and not a literal. Upon rendering this expression, Ban will search the
 //! Store for an entry with a key of "name" and use the value as the input
 //! for the first filter in the chain.
 //!
 //! The vertical pipe "|" denotes that the following identifier is the name of
-//! a filter. Ash will search for a filter with the name of "prepend" and execute
+//! a filter. Ban will search for a filter with the name of "prepend" and execute
 //! it with whatever "name" evaluated to as input.
 //!
 //! One argument for "prepend" is seen here, with a name of "1" and a value of
@@ -26,7 +26,7 @@
 //! The next filter, "append", is using an anonymous argument.
 //!
 //! Anonymous arguments have no explicitly assigned name, but they do still
-//! receive a name when Ash discovers them. For each anonymous argument in a
+//! receive a name when Ban discovers them. For each anonymous argument in a
 //! filter call, the name is equal to (n + 1) where n is the number of anonymous\
 //! arguments which came before the argument.
 //!
@@ -52,7 +52,7 @@ use std::collections::HashMap;
 /// Implementing a filter which returns the lowercase equivalent of a string:
 ///
 /// ```
-/// use ash::{json, Error, Filter, Store, Value};
+/// use ban::{json, Error, Filter, Store, Value};
 /// use std::collections::HashMap;
 ///
 /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
@@ -62,7 +62,7 @@ use std::collections::HashMap;
 ///     }
 /// }
 ///
-/// let mut engine = ash::new()
+/// let mut engine = ban::new()
 ///     .with_filter_must("to_lowercase", to_lowercase);
 ///
 /// let result = engine.render(

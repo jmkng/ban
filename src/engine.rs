@@ -1,7 +1,7 @@
 use crate::{filter::Filter, log::INVALID_FILTER, Error, Parser, Renderer, Store, Template};
 use std::collections::HashMap;
 
-/// Ash entry point.
+/// Ban entry point.
 ///
 /// Allows registering filters, compiling Template instances from strings,
 /// and rendering Template instances with some Store data.
