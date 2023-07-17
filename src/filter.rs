@@ -36,8 +36,9 @@
 //! ```rs
 //! args.get("1")
 //! ```
-use crate::Error;
-use serde_json::Value;
+pub use crate::store::Store;
+
+use crate::{Error, Value};
 use std::collections::HashMap;
 
 /// Describes a type which can be created and stored within an Engine,
@@ -48,13 +49,10 @@ use std::collections::HashMap;
 ///
 /// ## Examples
 ///
-/// Implementing a filter which displays a western greeting:
+/// Implementing a filter which returns the lowercase equivalent of a string:
 ///
 /// ```
-/// use ash::{
-///    serde_json::{json, Value},
-///    Error, Filter, Store,
-/// };
+/// use ash::{json, Error, Filter, Store, Value};
 /// use std::collections::HashMap;
 ///
 /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
@@ -68,9 +66,7 @@ use std::collections::HashMap;
 ///     .with_filter_must("to_lowercase", to_lowercase);
 ///
 /// let result = engine.render(
-///     engine
-///         .compile("(( name | to_lowercase ))")
-///         .unwrap(),
+///     &engine.compile_must("(( name | to_lowercase ))"),
 ///     &Store::new().with_must("name", "TAYLOR"),
 /// );
 ///
@@ -94,15 +90,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{engine::Engine, Error, Store};
-    use serde_json::{json, Value};
+    use crate::{engine::Engine, json, store::Store, Error, Value};
     use std::collections::HashMap;
 
     #[test]
     fn test_call_chain() {
         let engine = get_test_engine();
         let result = engine.render(
-            engine
+            &engine
                 .compile("(( name | to_lowercase | left 3 ))")
                 .unwrap(),
             &Store::new().with_must("name", "TAYLOR"),
@@ -115,7 +110,7 @@ mod tests {
     fn test_call_chain_error() {
         let engine = get_test_engine();
         let result = engine.render(
-            engine
+            &engine
                 .compile("(( name | to_lowercase | left \"10\" ))")
                 .unwrap(),
             &Store::new().with_must("name", "TAYLOR"),

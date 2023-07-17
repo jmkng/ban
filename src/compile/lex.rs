@@ -427,7 +427,11 @@ mod tests {
         log::Error,
         region::Region,
     };
-    use std::fs::read_to_string;
+    use std::{
+        fmt::Write,
+        fs::{read_to_string, File},
+        io::{BufRead, BufReader},
+    };
 
     #[test]
     fn test_lex_default_no_match() {
@@ -523,7 +527,15 @@ mod tests {
 
     #[test]
     fn test_lex_full_document() {
-        let source = read_to_string("examples/template.html").unwrap();
+        // Reading the file this way should strip any \r\n line endings and replace
+        // them with \n, so the test should pass on Windows.
+        let mut source = String::new();
+        let file = File::open("examples/template.html").unwrap();
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            write!(source, "{}\n", line.unwrap()).unwrap();
+        }
+        source = source.strip_suffix('\n').unwrap().to_string();
         let expect = vec![
             (Token::Raw, 0..196),
             (Token::BeginExpression, 196..198),

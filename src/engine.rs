@@ -22,14 +22,30 @@ impl<'source> Engine<'source> {
     }
 
     /// Compile a new Template.
+    ///
+    /// # Errors
+    ///
+    /// Returns an Error when compilation fails, which most likely means the source
+    /// contains invalid syntax.
     #[inline]
     pub fn compile(&self, text: &'source str) -> Result<Template<'source>, Error> {
         Parser::new(text).compile()
     }
 
+    /// Compile a new Template.
+    ///
+    /// # Panics
+    ///
+    /// Panics when compilation fails, which most likely means the source
+    /// contains invalid syntax.
+    #[inline]
+    pub fn compile_must(&self, text: &'source str) -> Template<'source> {
+        self.compile(text).unwrap()
+    }
+
     /// Render a Template with the given Store.
     #[inline]
-    pub fn render(&self, template: Template, store: &Store) -> Result<String, Error> {
+    pub fn render(&self, template: &'source Template, store: &Store) -> Result<String, Error> {
         Renderer::new(self, template, store).render()
     }
 

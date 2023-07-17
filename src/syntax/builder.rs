@@ -1,10 +1,9 @@
 use scout::Syntax;
 
-/// Delimiters that identify blocks and expressions within templates.
+/// Markers that identify blocks and expressions within templates.
 ///
 /// The actual value of each marker (custom delimiters) can be set by way of the
 /// Builder type.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Marker {
     /// Beginning of an Expression, which allows for outputting content
     /// and passing data through filters.
@@ -52,42 +51,38 @@ impl From<Marker> for usize {
     }
 }
 
-/// Provides methods to easily build a Syntax.
-///
-/// The types behind the constructed syntax are described by Marker.
+/// Provides methods to build a Syntax.
 ///
 /// # Example
 ///
 /// ```
 /// use ash::Builder;
-/// use scout::Finder;
 ///
 /// let syntax = Builder::new()
-///     .expression("((", "))")
-///     .block("(*", "*)")
-///     .whitespace(&'-')
+///     .with_expression("{{", "}}")
+///     .with_block("{*", "*}")
 ///     .build();
-///
-/// let finder = Finder::new(syntax);
-/// let result = finder.next("hello ((", 0);
 /// ```
-#[derive(Debug, Clone)]
-pub struct Builder<'a> {
-    expression: (&'a str, &'a str),
-    block: (&'a str, &'a str),
-    whitespace: &'a char,
+pub struct Builder<'marker> {
+    expression: (&'marker str, &'marker str),
+    block: (&'marker str, &'marker str),
+    whitespace: &'marker char,
 }
 
-impl<'a> Builder<'a> {
+impl<'marker> Builder<'marker> {
     /// Create a new Builder.
     ///
-    /// The delimiters have defaults as described here:
+    /// The Builder has default markers:
     ///
+    /// ```text
     /// Expressions: (( name ))
     /// Blocks: (* if ... *)
-    /// Whitespace: ((- -)) / (*- -*)
+    /// Whitespace:
+    ///     Expression: ((- name -))
+    ///     Block:  (*- if ... -*)
+    /// ```
     ///
-    /// To proceed with these defaults, you may immediately call 'build'
+    /// To proceed with these defaults, you may immediately call `build`
     /// to receive the Syntax instance.
     #[inline]
     pub fn new() -> Self {
@@ -98,31 +93,116 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Set the expression delimiters.
+    /// Set the expression markers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ash::Builder;
+    ///
+    /// let mut builder = Builder::new();
+    /// builder.set_expression("{{", "}}");
+    /// ```
     #[inline]
-    pub fn expression(&mut self, begin_expr: &'a str, end_expr: &'a str) -> &mut Self {
-        assert!(!begin_expr.is_empty() && !end_expr.is_empty());
-        self.expression = (begin_expr, end_expr);
+    pub fn set_expression(&mut self, begin: &'marker str, end: &'marker str) {
+        self.expression = (begin, end);
+    }
+
+    /// Set the expression markers.
+    ///
+    /// Returns the Builder, so additional methods may be chained.
+    ///
+    /// ```
+    /// use ash::Builder;
+    ///
+    /// Builder::new()
+    ///     .with_expression("{{", "}}");
+    /// ```
+    #[inline]
+    pub fn with_expression(mut self, begin: &'marker str, end: &'marker str) -> Self {
+        self.set_expression(begin, end);
         self
     }
 
-    /// Set the block delimiters.
+    /// Set the block markers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ash::Builder;
+    ///
+    /// let mut builder = Builder::new();
+    /// builder.set_block("{*", "*}");
+    /// ```
     #[inline]
-    pub fn block(&mut self, begin_block: &'a str, end_block: &'a str) -> &mut Self {
-        assert!(!begin_block.is_empty() && !end_block.is_empty());
-        self.block = (begin_block, end_block);
+    pub fn set_block(&mut self, begin: &'marker str, end: &'marker str) {
+        self.block = (begin, end);
+    }
+
+    /// Set the block markers.
+    ///
+    /// Returns the Builder, so additional methods may be chained.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ash::Builder;
+    ///
+    /// Builder::new()
+    ///     .with_block("{*", "*}");
+    /// ```
+    #[inline]
+    pub fn with_block(mut self, begin: &'marker str, end: &'marker str) -> Self {
+        self.set_block(begin, end);
         self
     }
 
     /// Set the whitespace trim character.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ash::Builder;
+    ///
+    /// let mut builder = Builder::new();
+    /// builder.set_whitespace(&'!');
+    /// ```
     #[inline]
-    pub fn whitespace(&mut self, whitespace_tag: &'a char) -> &mut Self {
-        assert!(!whitespace_tag.is_whitespace());
-        self.whitespace = whitespace_tag;
+    pub fn set_whitespace(&mut self, character: &'marker char) {
+        self.whitespace = character;
+    }
+
+    /// Set the whitespace trim character.
+    ///
+    /// Returns the Builder, so additional methods may be chained.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ash::Builder;
+    ///
+    /// Builder::new()
+    ///     .with_whitespace(&'!');
+    /// ```
+    #[inline]
+    pub fn with_whitespace(mut self, character: &'marker char) -> Self {
+        self.set_whitespace(character);
         self
     }
 
-    /// Build a Syntax instance from the given delimiters.
+    /// Return a Syntax instance from the markers in this Builder.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ash::Builder;
+    ///
+    /// let syntax = Builder::new()
+    ///     .with_expression("{{", "}}")
+    ///     .with_block("{*", "*}")
+    ///     .with_whitespace(&'!')
+    ///     .build();
+    /// ```
     pub fn build(&self) -> Syntax {
         let mut markers = Vec::new();
 
@@ -140,5 +220,21 @@ impl<'a> Builder<'a> {
         markers.push((Marker::EndBlockTrim.into(), format!("{ws}{bl1}")));
 
         Syntax::new(markers)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Builder;
+    use scout::Finder;
+
+    #[test]
+    fn test_default() {
+        let syntax = Builder::new().build();
+        let result = Finder::new(syntax).next("hello (( there", 0);
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().1, 6);
+        assert_eq!(result.unwrap().2, 8);
     }
 }

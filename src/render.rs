@@ -11,6 +11,6 @@ use crate::{Engine, Error, Store, Template};
 ///
 /// You may also prefer to create an Engine instance with [ash::new()] if you
 /// would like to make custom filter functions available to your template.
-pub fn render(template: Template, store: &Store) -> Result<String, Error> {
+pub fn render<'source>(template: &'source Template, store: &Store) -> Result<String, Error> {
     Renderer::new(&Engine::default(), template, store).render()
 }

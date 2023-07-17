@@ -13,7 +13,7 @@ pub struct Renderer<'source, 'store> {
     /// An engine containing any registered filters.
     engine: &'source Engine<'source>,
     /// The template being rendered.
-    template: Template<'source>,
+    template: &'source Template<'source>,
     /// The Store that the Template is rendered with.
     store: &'store Store,
     /// Storage for Block tags.
@@ -22,7 +22,11 @@ pub struct Renderer<'source, 'store> {
 
 impl<'source, 'store> Renderer<'source, 'store> {
     /// Create a new Renderer.
-    pub fn new(engine: &'source Engine, template: Template<'source>, store: &'store Store) -> Self {
+    pub fn new(
+        engine: &'source Engine,
+        template: &'source Template<'source>,
+        store: &'store Store,
+    ) -> Self {
         Renderer {
             engine,
             template,
