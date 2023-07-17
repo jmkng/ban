@@ -9,7 +9,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-scout = { git = "https://github.com/jmkng/scout" }
+morel = "0.1.0"
 unicode-ident = "1.0.10"
 unicode-width = "0.1.10"
 serde = "1.0.171"

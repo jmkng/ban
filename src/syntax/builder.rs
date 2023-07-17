@@ -1,4 +1,4 @@
-use scout::Syntax;
+use morel::Syntax;
 
 /// Markers that identify blocks and expressions within templates.
 ///
@@ -226,7 +226,7 @@ impl<'marker> Builder<'marker> {
 #[cfg(test)]
 mod tests {
     use crate::Builder;
-    use scout::Finder;
+    use morel::Finder;
 
     #[test]
     fn test_default() {

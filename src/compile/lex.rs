@@ -14,7 +14,7 @@ use crate::{
     log::{expected_operator, INVALID_SYNTAX, UNEXPECTED_TOKEN},
     Builder, Error, Pointer, Region,
 };
-use scout::Finder;
+use morel::Finder;
 
 pub type LexResult = Result<Option<(Token, Region)>, Error>;
 pub type LexResultMust = Result<(Token, Region), Error>;

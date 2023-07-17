@@ -333,9 +333,9 @@ impl<'source> Parser<'source> {
                         return Err(Error::build(UNEXPECTED_TOKEN)
                             .visual(Pointer::new(self.lexer.source, region))
                             .help(format!(
-                                "if you want to indicate that {} is a positive or negative number \
-                                try removing the separating whitespace",
-                                &self.lexer.source[next_region]
+                                "you can use `{}` here to make `{}` a negative number, but you must remove the separating whitespace",
+                                Operator::Subtract,
+                                &self.lexer.source[next_region],
                             )));
                     }
 
