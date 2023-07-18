@@ -3,8 +3,10 @@ use crate::{
         tree::{Arguments, Base, Call, Expression, Key, Output, Tree},
         Scope, Template,
     },
-    log::INVALID_FILTER,
-    Engine, Error, Pipe, Pointer, Region, Store,
+    log::{Error, Pointer, INVALID_FILTER},
+    pipe::Pipe,
+    region::Region,
+    Engine, Store,
 };
 use serde_json::Value;
 use std::{borrow::Cow, collections::HashMap, fmt::Write};

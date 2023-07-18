@@ -1,6 +1,6 @@
 use crate::{
     compile::tree::{Expression, LoopVariables},
-    Region,
+    region::Region,
 };
 
 /// Describes the state of the parser and provides temporary storage for

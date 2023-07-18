@@ -21,10 +21,10 @@ use crate::{
                 Tree, Variable,
             },
         },
-        Keyword, Operator,
+        Keyword, Operator, Scope, Template,
     },
-    log::{expected_keyword, INVALID_SYNTAX, UNEXPECTED_EOF, UNEXPECTED_TOKEN},
-    Error, Pointer, Region, Scope, Template,
+    log::{expected_keyword, Error, Pointer, INVALID_SYNTAX, UNEXPECTED_EOF, UNEXPECTED_TOKEN},
+    region::Region,
 };
 use serde_json::{Number, Value};
 use std::ops::Range;

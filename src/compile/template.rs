@@ -1,8 +1,6 @@
-use crate::Scope;
+use super::Scope;
 
-/// Compiled template.
-///
-/// May be rendered with some Store data to generate output.
+/// A compiled template that can be rendered with a `Store`.
 #[derive(Debug, Clone)]
 pub struct Template<'source> {
     /// The Abstract Syntax Tree generated during compilation.

@@ -8,19 +8,13 @@ pub use crate::compile::{
     template::Template,
 };
 
-use crate::Error;
+use crate::log::Error;
 use std::fmt::Display;
 
-/// Compile a template.
+/// Compile a `Template` from the given text.
 ///
-/// Provides a shortcut to quickly compile a Template without creating
-/// an Engine.
-///
-/// If you create a Template that relies on custom filter functions,
-/// you will need to use [`crate::new()`] to create an Engine instance
-/// which can store your filters.
-///
-/// This Engine should also be used to perform the render.
+/// Provides a shortcut to quickly compile a `Template` without creating
+/// an `Engine`.
 pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
     Parser::new(text).compile()
 }

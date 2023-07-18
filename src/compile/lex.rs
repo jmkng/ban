@@ -11,8 +11,9 @@ mod state;
 
 use crate::{
     compile::{lex::state::State, token::Token, Keyword, Operator},
-    log::{expected_operator, INVALID_SYNTAX, UNEXPECTED_TOKEN},
-    Builder, Error, Pointer, Region,
+    log::{expected_operator, Error, Pointer, INVALID_SYNTAX, UNEXPECTED_TOKEN},
+    region::Region,
+    Builder,
 };
 use morel::Finder;
 
@@ -523,6 +524,15 @@ mod tests {
         ];
 
         helper_lex_next_auto(r#"(( "\"name\"" ))"#, expect);
+    }
+
+    #[test]
+    fn bonkers() {
+        let mut lexer = Lexer::new("(( 3 ))");
+        for i in 0..3 {
+            let next = lexer.next();
+            println!("{:?}", next)
+        }
     }
 
     #[test]

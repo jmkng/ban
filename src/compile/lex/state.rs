@@ -5,7 +5,7 @@ use crate::compile::lex::Token;
 pub(crate) enum State {
     /// Indicates the lexer is not inside of a block or expression.
     Default,
-    /// Tag refers to a Block or Expression.
+    /// Tag refers to a `Block` or `Expression`.
     Tag {
         /// The expected ending, either "))" or "*)" by default.
         end_token: Token,

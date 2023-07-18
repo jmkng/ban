@@ -1,10 +1,15 @@
-use crate::{filter::Filter, log::INVALID_FILTER, Error, Parser, Renderer, Store, Template};
+use crate::{
+    compile::{Parser, Template},
+    filter::Filter,
+    log::Error,
+    log::INVALID_FILTER,
+    render::Renderer,
+    Store,
+};
 use std::collections::HashMap;
 
-/// Ban entry point.
-///
-/// Allows registering filters, compiling Template instances from strings,
-/// and rendering Template instances with some Store data.
+/// Facilitates compiling and rendering templates, and provides storage
+/// for filters.
 pub struct Engine<'source> {
     /// Filters that this engine is aware of.
     filters: HashMap<String, Box<dyn Filter>>,
@@ -13,10 +18,10 @@ pub struct Engine<'source> {
 }
 
 impl<'source> Engine<'source> {
+    /// Create a new instance of Engine with the given Syntax.
     #[inline]
     pub fn new() -> Self {
         todo!()
-
         // This function will accept and use a Syntax to parse templates,
         // but isn't implemented yet.
     }
@@ -128,7 +133,7 @@ impl<'source> Default for Engine<'source> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{engine::Engine, Error};
+    use crate::{engine::Engine, log::Error};
     use serde_json::Value;
     use std::collections::HashMap;
 

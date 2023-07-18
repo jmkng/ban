@@ -8,6 +8,7 @@ use std::{
     fmt::{Formatter, Result},
 };
 
+/// A type of `Visual` that points to a specific location within source text.
 #[derive(Debug, PartialEq)]
 pub struct Pointer {
     /// The line that the Pointer is pointing to.

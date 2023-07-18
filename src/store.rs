@@ -1,9 +1,9 @@
-use crate::Error;
+use crate::log::Error;
 use serde::Serialize;
 use serde_json::{to_value, Value};
 use std::{collections::HashMap, fmt::Display};
 
-/// Provides storage for data that templates can be rendered against.
+/// Provides storage for data that a `Template` can be rendered with.
 pub struct Store {
     data: HashMap<String, Value>,
 }

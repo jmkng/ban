@@ -1,11 +1,11 @@
-use crate::{log::INVALID_SYNTAX, Error, Pointer};
+use crate::log::{Error, Pointer, INVALID_SYNTAX};
 use std::{
     cmp::{max, min},
     fmt::Display,
     ops::{Index, Range},
 };
 
-/// Represents a region (beginning and ending indices) within some source.
+/// Represents an area (beginning and ending indices) within source text.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Region {
     /// The beginning of the range, inclusive.

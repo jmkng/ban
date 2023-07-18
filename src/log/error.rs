@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter, Result};
 
-use crate::{compile::token::Token, Visual};
+use crate::{compile::token::Token, log::Visual};
 
 use super::{RED, RESET};
 
@@ -9,7 +9,7 @@ pub const UNEXPECTED_EOF: &str = "unexpected eof";
 pub const INVALID_SYNTAX: &str = "invalid syntax";
 pub const INVALID_FILTER: &str = "invalid filter";
 
-/// An error type that optionally supports printing a visualization.
+/// Error type that optionally supports printing a visualization.
 pub struct Error {
     /// Describes the cause of the Error.
     reason: String,
@@ -44,8 +44,10 @@ impl Error {
     /// Creating an Error with the builder API that includes a Visual
     /// of type Pointer:
     ///
-    /// ```rs
-    /// use ban::{Region, Pointer, Error};
+    /// ```
+    /// use ban::{
+    ///     filter::{Error, Region, visual::Pointer}
+    /// };
     ///
     /// let source = "(* update name *)";
     /// let region = Region::new(3..9);
@@ -174,7 +176,7 @@ pub fn expected_operator(received: char) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{log::visual::Pointer, Region};
+    use crate::{log::visual::Pointer, region::Region};
 
     use super::*;
 
