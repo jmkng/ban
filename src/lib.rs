@@ -170,6 +170,12 @@ use syntax::Marker;
 /// Create a new instance of `Engine` using the default `Syntax`.
 ///
 /// Equivalent to [`default`][`crate::Engine::default()`]
+///
+/// # Examples
+///
+/// ```
+/// let engine = ban::default();
+/// ```
 pub fn default<'source>() -> Engine<'source> {
     Engine::default()
 }

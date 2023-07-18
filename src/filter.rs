@@ -180,7 +180,7 @@ mod tests {
     ///
     /// # Errors
     ///
-    /// Returns an Error if the Value is not of type String.
+    /// Returns an error if the Value is not of type String.
     fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
         match value {
             Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
@@ -195,7 +195,7 @@ mod tests {
     ///
     /// # Errors
     ///
-    /// Returns an Error if the input is not a string, more than one
+    /// Returns an error if the input is not a string, more than one
     /// argument is provided, or the argument is not a number.
     fn left(value: &Value, args: &HashMap<String, Value>) -> Result<Value, Error> {
         let arg_len = args.len();

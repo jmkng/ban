@@ -10,6 +10,14 @@ pub struct Store {
 
 impl Store {
     /// Create a new Store.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Store;
+    ///
+    /// let store = Store::new();
+    /// ```
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -22,6 +30,17 @@ impl Store {
     /// # Errors
     ///
     /// Returns an error if the serialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Store;
+    ///
+    /// let mut store = Store::new();
+    /// let result = store.insert("name", "taylor");
+    ///
+    /// assert!(result.is_ok());
+    /// ```
     pub fn insert<S, T>(&mut self, key: S, value: T) -> Result<(), Error>
     where
         S: Into<String>,
@@ -43,7 +62,16 @@ impl Store {
     ///
     /// # Panics
     ///
-    /// Will panic if the serialization fails.
+    /// Panics if the serialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Store;
+    ///
+    /// let mut store = Store::new();
+    /// store.insert_must("name", "taylor");
+    /// ```
     #[inline]
     pub fn insert_must<S, T>(&mut self, key: S, value: T)
     where
@@ -60,6 +88,16 @@ impl Store {
     /// # Errors
     ///
     /// Returns an error if the serialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Store;
+    ///
+    /// let mut store = Store::new().with("name", "taylor");
+    ///
+    /// assert!(store.is_ok());
+    /// ```
     pub fn with<S, T>(mut self, key: S, value: T) -> Result<Self, Error>
     where
         S: Into<String>,
@@ -75,7 +113,15 @@ impl Store {
     ///
     /// # Panics
     ///
-    /// Will panic if the serialization fails.
+    /// Panics if the serialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Store;
+    ///
+    /// let mut store = Store::new().with_must("name", "taylor");
+    /// ```
     #[inline]
     pub fn with_must<S, T>(mut self, key: S, value: T) -> Self
     where
@@ -87,6 +133,17 @@ impl Store {
     }
 
     /// Get the value of the given key, if any.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Store;
+    ///
+    /// let store = Store::new().with_must("name", "taylor");
+    /// let result = store.get("name");
+    ///
+    /// assert_eq!(result.unwrap(), "taylor")
+    /// ```
     #[inline]
     pub fn get(&self, index: &str) -> Option<&Value> {
         self.data.get(index)

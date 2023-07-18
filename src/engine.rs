@@ -19,6 +19,8 @@ pub struct Engine<'source> {
 
 impl<'source> Engine<'source> {
     /// Create a new instance of Engine with the given Syntax.
+    ///
+    /// Note: This method is a stub and is not yet implemented.
     #[inline]
     pub fn new() -> Self {
         todo!()
@@ -30,8 +32,18 @@ impl<'source> Engine<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an Error when compilation fails, which most likely means the source
+    /// Returns an error when compilation fails, which most likely means the source
     /// contains invalid syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Engine;
+    ///
+    /// let engine = Engine::default();
+    /// let template = engine.compile("hello, (( name ))!");
+    /// assert!(template.is_ok());
+    /// ```
     #[inline]
     pub fn compile(&self, text: &'source str) -> Result<Template<'source>, Error> {
         Parser::new(text).compile()
@@ -43,12 +55,38 @@ impl<'source> Engine<'source> {
     ///
     /// Panics when compilation fails, which most likely means the source
     /// contains invalid syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Engine;
+    ///
+    /// let engine = Engine::default();
+    /// let template = engine.compile_must("hello, (( name ))!");
+    /// ```
     #[inline]
     pub fn compile_must(&self, text: &'source str) -> Template<'source> {
         self.compile(text).unwrap()
     }
 
     /// Render a Template with the given Store.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if rendering fails, which may happen when a filter
+    /// returns an error.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::{Store, Engine};
+    ///
+    /// let engine = Engine::default();
+    /// let template = engine.compile_must("hello, (( name ))!");
+    /// let result = engine.render(&template, &Store::new().with_must("name", "taylor"));
+    ///
+    /// assert_eq!(result.unwrap(), "hello, taylor!")
+    /// ```
     #[inline]
     pub fn render(&self, template: &'source Template, store: &Store) -> Result<String, Error> {
         Renderer::new(self, template, store).render()
@@ -59,6 +97,33 @@ impl<'source> Engine<'source> {
     /// # Errors
     ///
     /// If a Filter with the given name already exists in the engine, an error is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::{
+    ///     filter::{
+    ///         serde::{json, Value},
+    ///         Error,
+    ///     },
+    ///     Engine, Store,
+    /// };
+    /// use std::collections::HashMap;
+    ///
+    /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+    ///     match value {
+    ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
+    ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
+    ///            .help("use quotes to coerce data to string")
+    ///         ),
+    ///     }
+    /// };
+    ///
+    /// let mut engine = Engine::default();
+    /// let result = engine.add_filter("to_lowercase", to_lowercase);
+    ///
+    /// assert!(result.is_ok());
+    /// ```
     pub fn add_filter<T>(&mut self, name: &str, filter: T) -> Result<(), Error>
     where
         T: Filter + 'static,
@@ -77,6 +142,31 @@ impl<'source> Engine<'source> {
     /// Add a Filter.
     ///
     /// If a Filter with the given name already exists in the engine, it is overwritten.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::{
+    ///     filter::{
+    ///         serde::{json, Value},
+    ///         Error,
+    ///     },
+    ///     Engine, Store,
+    /// };
+    /// use std::collections::HashMap;
+    ///
+    /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+    ///     match value {
+    ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
+    ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
+    ///            .help("use quotes to coerce data to string")
+    ///         ),
+    ///     }
+    /// };
+    ///
+    /// let mut engine = Engine::default();
+    /// let result = engine.add_filter_must("to_lowercase", to_lowercase);
+    /// ```
     #[inline]
     pub fn add_filter_must<T>(&mut self, name: &str, filter: T)
     where
@@ -92,6 +182,32 @@ impl<'source> Engine<'source> {
     /// # Errors
     ///
     /// If a Filter with the given name already exists in the engine, an error is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::{
+    ///     filter::{
+    ///         serde::{json, Value},
+    ///         Error,
+    ///     },
+    ///     Engine, Store,
+    /// };
+    /// use std::collections::HashMap;
+    ///
+    /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+    ///     match value {
+    ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
+    ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
+    ///            .help("use quotes to coerce data to string")
+    ///         ),
+    ///     }
+    /// };
+    ///
+    /// let result = Engine::default().with_filter("to_lowercase", to_lowercase);
+    ///
+    /// assert!(result.is_ok());
+    /// ```
     #[inline]
     pub fn with_filter<T>(mut self, name: &str, filter: T) -> Result<Self, Error>
     where
@@ -106,6 +222,30 @@ impl<'source> Engine<'source> {
     /// Returns the Engine, so additional methods may be chained.
     ///
     /// If a Filter with the given name already exists in the engine, it is overwritten.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::{
+    ///     filter::{
+    ///         serde::{json, Value},
+    ///         Error,
+    ///     },
+    ///     Engine, Store,
+    /// };
+    /// use std::collections::HashMap;
+    ///
+    /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+    ///     match value {
+    ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
+    ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
+    ///            .help("use quotes to coerce data to string")
+    ///         ),
+    ///     }
+    /// };
+    ///
+    /// let engine = Engine::default().with_filter_must("to_lowercase", to_lowercase);
+    /// ```
     #[inline]
     pub fn with_filter_must<T>(mut self, name: &str, filter: T) -> Self
     where

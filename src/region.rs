@@ -63,7 +63,7 @@ impl Region {
     ///
     /// # Errors
     ///
-    /// Returns an Error if the Region is out of bounds in the given source text.
+    /// Returns an error if the Region is out of bounds in the given source text.
     pub fn literal<'source>(&self, source: &'source str) -> Result<&'source str, Error> {
         source.get(self.begin..self.end).ok_or_else(|| {
             Error::build(INVALID_SYNTAX)

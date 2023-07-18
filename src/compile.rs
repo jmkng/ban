@@ -15,6 +15,15 @@ use std::fmt::Display;
 ///
 /// Provides a shortcut to quickly compile a `Template` without creating
 /// an `Engine`.
+///
+/// # Examples
+///
+/// ```
+/// use ban::compile;
+///
+/// let template = compile("(( name ))");
+/// assert!(template.is_ok())
+/// ```
 pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
     Parser::new(text).compile()
 }

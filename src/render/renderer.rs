@@ -41,7 +41,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an Error if rendering any of the Tree instances within the Template
+    /// Returns an error if rendering any of the Tree instances within the Template
     /// fails, or writing the rendered Tree to the buffer fails.
     pub fn render(&mut self) -> Result<String, Error> {
         let mut buffer = String::with_capacity(self.template.source.len());
@@ -76,7 +76,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an Error if rendering the Output fails.
+    /// Returns an error if rendering the Output fails.
     fn render_output(&self, output: &'source Output) -> Result<Cow<Value>, Error> {
         match &output.expression {
             Expression::Base(base) => self.render_base(base),
@@ -88,7 +88,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an Error if rendering the Base fails.
+    /// Returns an error if rendering the Base fails.
     fn render_base(&self, base: &'source Base) -> Result<Cow<Value>, Error> {
         match base {
             Base::Variable(variable) => self.eval_keys(&variable.path),
@@ -108,7 +108,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an Error in these cases:
+    /// Returns an error in these cases:
     ///
     /// - Rendering the Base of the Call chain fails.
     /// - Executing a Filter returns an Error.
@@ -164,7 +164,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an Error if accessing the literal value of the Region fails.
+    /// Returns an error if accessing the literal value of the Region fails.
     fn render_raw(&self, region: &Region) -> Result<&str, Error> {
         Ok(region.literal(self.template.source)?)
     }
@@ -174,7 +174,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an Error when accessing the literal value of the Region
+    /// Returns an error when accessing the literal value of the Region
     /// from any of the Key instances fails.
     fn eval_keys(&self, keys: &Vec<Key>) -> Result<Cow<Value>, Error> {
         let first_region = keys

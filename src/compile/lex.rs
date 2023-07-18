@@ -172,7 +172,7 @@ impl<'source> Lexer<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an Error if one of the patterns described above is not matched.
+    /// Returns an error if one of the patterns described above is not matched.
     fn lex_operator<T>(&mut self, mut iter: T, from: usize, previous: char) -> LexResult
     where
         T: Iterator<Item = (usize, char)>,

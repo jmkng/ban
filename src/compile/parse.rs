@@ -169,7 +169,7 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an Error if the token before the Base is an Exclamation
+    /// Returns an error if the token before the Base is an Exclamation
     /// but the Base and Exclamation are not neighbors.
     ///
     /// ! name <- invalid
