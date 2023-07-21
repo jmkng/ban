@@ -221,9 +221,9 @@ mod tests {
                             number
                         ))),
                     },
-                    _ => Err(Error::build(format!(
+                    unexpected => Err(Error::build(format!(
                         "filter `left` expects a number argument, received `{}`",
-                        n,
+                        unexpected,
                     ))),
                 }
             }

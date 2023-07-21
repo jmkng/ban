@@ -132,7 +132,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
             let func = self.engine.get_filter(name_literal);
             if func.is_none() {
                 return Err(Error::build(INVALID_FILTER)
-                    .visual(Pointer::new(self.template.source, call.name.region))
+                    .pointer(self.template.source, call.name.region)
                     .help(format!(
                         "template wants to use the `{name_literal}` filter, but a filter with that \
                         name was not found in this engine, did you add the filter to the engine with \
@@ -149,7 +149,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
             let returned = func
                 .unwrap()
                 .apply(&value, &arguments)
-                .or_else(|e| Err(e.visual(Pointer::new(self.template.source, call.name.region))))?;
+                .or_else(|e| Err(e.pointer(self.template.source, call.name.region)))?;
 
             value = Cow::Owned(returned);
         }

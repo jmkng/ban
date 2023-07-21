@@ -58,10 +58,6 @@ pub enum Keyword {
     Block,
     /// Ending of a block expression.
     EndBlock,
-    /// A boolean true.
-    True,
-    /// A boolean false.
-    False,
 }
 
 impl Display for Keyword {
@@ -78,8 +74,6 @@ impl Display for Keyword {
             Keyword::Extends => write!(f, "extends'"),
             Keyword::Block => write!(f, "block"),
             Keyword::EndBlock => write!(f, "endblock"),
-            Keyword::True => write!(f, "true"),
-            Keyword::False => write!(f, "false"),
         }
     }
 }
@@ -95,8 +89,6 @@ pub enum Operator {
     Multiply,
     /// /
     Divide,
-    /// =
-    Assign,
     /// ==
     Equal,
     /// !=
@@ -105,10 +97,6 @@ pub enum Operator {
     GreaterOrEqual,
     /// <=
     LesserOrEqual,
-    /// ||
-    Or,
-    /// &&
-    And,
 }
 
 impl Display for Operator {
@@ -118,13 +106,10 @@ impl Display for Operator {
             Operator::Subtract => write!(f, "subtract (-)"),
             Operator::Multiply => write!(f, "multiply (*)"),
             Operator::Divide => write!(f, "divide (/)"),
-            Operator::Assign => write!(f, "assign (=)"),
             Operator::Equal => write!(f, "equal (==)"),
             Operator::NotEqual => write!(f, "not equal (!=)"),
             Operator::GreaterOrEqual => write!(f, "greater or equal (>=)"),
             Operator::LesserOrEqual => write!(f, "lesser or equal (<=)"),
-            Operator::Or => write!(f, "or (||)"),
-            Operator::And => write!(f, "and (&&)"),
         }
     }
 }

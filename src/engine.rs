@@ -18,7 +18,7 @@ pub struct Engine<'source> {
 }
 
 impl<'source> Engine<'source> {
-    /// Create a new instance of Engine with the given Syntax.
+    /// Create a new instance of [`Engine`] with the given `Syntax`.
     ///
     /// Note: This method is a stub and is not yet implemented.
     #[inline]
@@ -28,11 +28,11 @@ impl<'source> Engine<'source> {
         // but isn't implemented yet.
     }
 
-    /// Compile a new Template.
+    /// Compile a new [`Template`].
     ///
     /// # Errors
     ///
-    /// Returns an error when compilation fails, which most likely means the source
+    /// Returns an [`Error`] when compilation fails, which most likely means the source
     /// contains invalid syntax.
     ///
     /// # Examples
@@ -49,7 +49,7 @@ impl<'source> Engine<'source> {
         Parser::new(text).compile()
     }
 
-    /// Compile a new Template.
+    /// Compile a new [`Template`].
     ///
     /// # Panics
     ///
@@ -69,12 +69,13 @@ impl<'source> Engine<'source> {
         self.compile(text).unwrap()
     }
 
-    /// Render a Template with the given Store.
+    /// Render a [`Template`] with the given [`Store`].
     ///
     /// # Errors
     ///
-    /// Returns an error if rendering fails, which may happen when a filter
-    /// returns an error.
+    /// Returns an [`Error`] if rendering fails, which may happen when a [`Filter`] returns
+    /// an `Error` itself, or the template cannot be rendered for a reason that will
+    /// be described by the `Error`.
     ///
     /// # Examples
     ///
@@ -92,11 +93,11 @@ impl<'source> Engine<'source> {
         Renderer::new(self, template, store).render()
     }
 
-    /// Add a Filter.
+    /// Add a [`Filter`].
     ///
     /// # Errors
     ///
-    /// If a Filter with the given name already exists in the engine, an error is returned.
+    /// If a `Filter` with the given name already exists in the engine, an [`Error`] is returned.
     ///
     /// # Examples
     ///
@@ -139,9 +140,9 @@ impl<'source> Engine<'source> {
         Ok(())
     }
 
-    /// Add a Filter.
+    /// Add a [`Filter`].
     ///
-    /// If a Filter with the given name already exists in the engine, it is overwritten.
+    /// If a `Filter` with the given name already exists in the [`Engine`], it is overwritten.
     ///
     /// # Examples
     ///
@@ -175,13 +176,13 @@ impl<'source> Engine<'source> {
         self.filters.insert(name.to_string(), Box::new(filter));
     }
 
-    /// Add a Filter.
+    /// Add a [`Filter`].
     ///
-    /// Returns the Engine, so additional methods may be chained.
+    /// Returns the [`Engine`], so additional methods may be chained.
     ///
     /// # Errors
     ///
-    /// If a Filter with the given name already exists in the engine, an error is returned.
+    /// If a `Filter` with the given name already exists in the engine, an [`Error`] is returned.
     ///
     /// # Examples
     ///

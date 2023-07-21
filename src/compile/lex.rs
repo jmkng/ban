@@ -105,7 +105,7 @@ impl<'source> Lexer<'source> {
                             };
 
                             Err(Error::build(UNEXPECTED_TOKEN)
-                                .visual(Pointer::new(self.source, (from..length).into()))
+                                .pointer(self.source, from..length)
                                 .help(format!("did you close the previous {which}?")))
                         }
                     }
@@ -140,7 +140,7 @@ impl<'source> Lexer<'source> {
                     // after it, lex_operator will figure it out and return the right thing.
                     '=' | '!' | '>' | '<' | '|' | '&' => self.lex_operator(iterator, index, char),
                     _ => Err(Error::build(UNEXPECTED_TOKEN)
-                        .visual(Pointer::new(self.source, (index..index + 1).into()))
+                        .pointer(self.source, index..index + 1)
                         .help(
                             "expected one of `*`, `+`, `/`, `-`, `.`, `:`, an identifier, \
                             an ascii digit, or beginning of a string literal marked with \"",
@@ -175,14 +175,14 @@ impl<'source> Lexer<'source> {
             ('!', Some((usize, '='))) => (usize, Token::Operator(Operator::NotEqual)),
             ('>', Some((usize, '='))) => (usize, Token::Operator(Operator::GreaterOrEqual)),
             ('<', Some((usize, '='))) => (usize, Token::Operator(Operator::LesserOrEqual)),
-            ('|', Some((usize, '|'))) => (usize, Token::Operator(Operator::Or)),
-            ('&', Some((usize, '&'))) => (usize, Token::Operator(Operator::And)),
-            ('=', Some(_)) | ('=', None) => (from, Token::Operator(Operator::Assign)),
+            ('=', Some(_)) | ('=', None) => (from, Token::Assign),
+            ('|', Some((usize, '|'))) => (usize, Token::Or),
+            ('&', Some((usize, '&'))) => (usize, Token::And),
             ('|', Some(_)) | ('|', None) => (from, Token::Pipe),
             ('!', Some(_)) | ('!', None) => (from, Token::Exclamation),
             _ => {
                 return Err(Error::build(UNEXPECTED_TOKEN)
-                    .visual(Pointer::new(self.source, (from..from + 1).into()))
+                    .pointer(self.source, from..from + 1)
                     .help(expected_operator(previous)));
             }
         };
@@ -265,7 +265,7 @@ impl<'source> Lexer<'source> {
                         .expect("valid error must contain range");
 
                     return Err(Error::build(INVALID_SYNTAX)
-                        .visual(Pointer::new(self.source, (from..take).into()))
+                        .pointer(self.source, from..take)
                         .help("this might be an undelimited string, try closing it with `\"`"));
                 }
             }
@@ -285,8 +285,7 @@ impl<'source> Lexer<'source> {
                 .source
                 .get(from..to)
                 .expect("valid range is required to check keyword");
-            // TODO: This must be manually updated if compile::Keyword is changed.
-            // Compiler won't warn about it.
+
             let token = match range_text.to_lowercase().as_str() {
                 "if" => Token::Keyword(Keyword::If),
                 "else" => Token::Keyword(Keyword::Else),
@@ -299,8 +298,8 @@ impl<'source> Lexer<'source> {
                 "extends" => Token::Keyword(Keyword::Extends),
                 "block" => Token::Keyword(Keyword::Block),
                 "endblock" => Token::Keyword(Keyword::EndBlock),
-                "true" => Token::Keyword(Keyword::True),
-                "false" => Token::Keyword(Keyword::False),
+                "true" => Token::True,
+                "false" => Token::False,
                 _ => Token::Identifier,
             };
 
@@ -358,7 +357,7 @@ impl<'source> Lexer<'source> {
                     }
                     _ => {
                         return Err(Error::build(UNEXPECTED_TOKEN)
-                            .visual(Pointer::new(self.source, (marker_begin..marker_end).into()))
+                            .pointer(self.source, marker_begin..marker_end)
                             .help("expected beginning expression or beginning block"));
                     }
                 }

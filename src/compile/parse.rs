@@ -80,7 +80,7 @@ impl<'source> Parser<'source> {
             };
 
             return Err(Error::build(INVALID_SYNTAX)
-                .visual(Pointer::new(self.lexer.source, *region))
+                .pointer(self.lexer.source, *region)
                 .help(format!(
                     "did you close the `{block}` block with a `{close}` block?"
                 )));
@@ -180,14 +180,10 @@ impl<'source> Parser<'source> {
 
             if !base.get_region().is_neighbor(exclamation.1) {
                 return Err(Error::build(UNEXPECTED_TOKEN)
-                    .visual(Pointer::new(
-                        self.lexer.source,
-                        exclamation.1.combine(base.get_region()),
-                    ))
+                    .pointer(self.lexer.source, exclamation.1.combine(base.get_region()))
                     .help(format!(
-                        "you can use `{}` to negate the base expression, \
-                        but you must remove the separating whitespace",
-                        Token::Exclamation
+                        "you can use `{}` to negate the expression, but you must remove the separating whitespace",
+                        Token::Exclamation,
                     )));
             }
             base.set_negate(true);
@@ -210,7 +206,7 @@ impl<'source> Parser<'source> {
         // |                                       |
         // from                                    to
         let mut compare = Compare::new();
-        let mut state = CompareState::Base(false);
+        let mut state = CompareState::default();
 
         loop {
             match state {
@@ -234,59 +230,46 @@ impl<'source> Parser<'source> {
                 // or Token::EndBlock shows up.
                 CompareState::Operator => match self.peek_must()? {
                     (token, region) => match token {
-                        Token::EndBlock => state = CompareState::Transition,
-                        Token::Operator(operator) => match operator {
-                            Operator::Assign => {
-                                // This might be a common mistake, so better to provide a more
-                                // detailed error.
-                                return Err(Error::build(UNEXPECTED_TOKEN)
-                                    .visual(Pointer::new(self.lexer.source, region))
-                                    .help(format!(
-                                    "`{}` is only valid in `let` block, did you mean to use `{}` \
-                                    to check for equality?",
-                                    Operator::Assign,
-                                    Operator::Equal
-                                )));
-                            }
-                            Operator::Or | Operator::And => state = CompareState::Transition,
-                            operator => {
-                                // Valid operators are handled here.
-                                self.next_any_must()?;
-                                compare
-                                    .last_check_mut_must("operator state implies that check exists")
-                                    .operator = Some(operator);
+                        Token::EndBlock | Token::Or | Token::And => {
+                            state = CompareState::Transition
+                        }
+                        Token::Operator(op) => {
+                            self.next_any_must()?;
+                            compare
+                                .last_check_mut_must("operator state implies that check exists")
+                                .operator = Some(op);
 
-                                state = CompareState::Base(true);
-                            }
-                        },
-                        token => {
+                            state = CompareState::Base(true);
+                        }
+                        unexpected => {
                             return Err(Error::build(UNEXPECTED_TOKEN)
-                                .visual(Pointer::new(self.lexer.source, region))
-                                .help(expected_operator(token)))
+                                .pointer(self.lexer.source, region)
+                                .help(expected_operator(unexpected)))
                         }
                     },
                 },
                 // Handle "&&", "||" and `Token::EndBlock`.
                 CompareState::Transition => match self.next_any_must()? {
                     (Token::EndBlock, _) => break,
-                    (Token::Operator(operator), _) if operator == Operator::Or => {
+                    (Token::Or, _) => {
                         // Split up the `Path`.
                         compare.split_path();
                         state = CompareState::Base(false);
                     }
-                    (Token::Operator(operator), _) if operator == Operator::And => {
+                    (Token::And, _) => {
                         // Start a new `Check`, which requires a `Base`.
                         let base = self.parse_negated_base()?;
                         compare.split_check(base);
                         state = CompareState::Operator;
                     }
-                    (_, region) => {
+                    unexpected => {
                         return Err(Error::build(UNEXPECTED_TOKEN)
-                            .visual(Pointer::new(self.lexer.source, region))
+                            .pointer(self.lexer.source, unexpected.1)
                             .help(format!(
-                                "expected `{}`, `{}` or end of block",
-                                Operator::And,
-                                Operator::Or
+                                "expected `{}`, `{}` or end of block, found `{}`",
+                                Token::And,
+                                Token::Or,
+                                unexpected.0
                             )))
                     }
                 },
@@ -306,7 +289,7 @@ impl<'source> Parser<'source> {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
             (token, region) => Err(Error::build(UNEXPECTED_TOKEN)
                 .help(expected_keyword(token))
-                .visual(Pointer::new(self.lexer.source, region))),
+                .pointer(self.lexer.source, region)),
         }
     }
 
@@ -328,7 +311,7 @@ impl<'source> Parser<'source> {
 
                 if name_or_value.get_negate() {
                     return Err(Error::build(INVALID_SYNTAX)
-                        .visual(Pointer::new(self.lexer.source, name_or_value.get_region()))
+                        .pointer(self.lexer.source, name_or_value.get_region())
                         .help(
                             "you might have tried to negate the argument name rather than \
                             the argument value",
@@ -409,7 +392,7 @@ impl<'source> Parser<'source> {
                     // - 1000 | + 1000<- invalid
                     if !region.is_neighbor(next_region) {
                         return Err(Error::build(UNEXPECTED_TOKEN)
-                            .visual(Pointer::new(self.lexer.source, region.combine(next_region)))
+                            .pointer(self.lexer.source, region.combine(next_region))
                             .help(format!(
                                 "you can use `{}` to make `{}` a negative number, \
                                 but you must remove the separating whitespace",
@@ -424,7 +407,7 @@ impl<'source> Parser<'source> {
                 }
                 _ => {
                     return Err(Error::build(UNEXPECTED_TOKEN)
-                        .visual(Pointer::new(self.lexer.source, region))
+                        .pointer(self.lexer.source, region)
                         .help(format!(
                             "only `{}` or `{}` operators to indicate a positive or negative \
                             numbers are valid here",
@@ -454,7 +437,7 @@ impl<'source> Parser<'source> {
             (token, region) => {
                 println!("{}", token);
                 return Err(Error::build(UNEXPECTED_TOKEN)
-                    .visual(Pointer::new(self.lexer.source, region))
+                    .pointer(self.lexer.source, region)
                     .help(format!(
                         "expected a variable or identifier, found `{}`",
                         token
@@ -490,7 +473,7 @@ impl<'source> Parser<'source> {
         match self.next_any_must()? {
             (Token::Identifier, region) => Ok(Key::from(Identifier { region })),
             (_, region) => Err(Error::build(UNEXPECTED_TOKEN)
-                .visual(Pointer::new(self.lexer.source, region))
+                .pointer(self.lexer.source, region)
                 .help("expected an unquoted identifier such as `one.two`")),
         }
     }
@@ -522,7 +505,7 @@ impl<'source> Parser<'source> {
                             '"' => '"',
                             _ => {
                                 return Err(Error::build("unexpected escape character")
-                                    .visual(Pointer::new(self.lexer.source, region)))
+                                    .pointer(self.lexer.source, region))
                             }
                         };
                         string.push(c);
@@ -547,7 +530,7 @@ impl<'source> Parser<'source> {
     fn parse_number_literal(&self, window: &str, region: Region) -> Result<Literal, Error> {
         let as_number: Number = window.parse().map_err(|_| {
             Error::build("unrecognizable number")
-                .visual(Pointer::new(self.lexer.source, region))
+                .pointer(self.lexer.source, region)
                 .help(format!(
                     "numbers may begin with `{}` to indicate a negative \
                     number and must not end with a decimal",
@@ -575,7 +558,7 @@ impl<'source> Parser<'source> {
             "false" => false,
             _ => {
                 return Err(Error::build(UNEXPECTED_TOKEN)
-                    .visual(Pointer::new(self.lexer.source, region))
+                    .pointer(self.lexer.source, region)
                     .help("expected `true` or `false` boolean literal"))
             }
         };
@@ -651,17 +634,14 @@ impl<'source> Parser<'source> {
                     Ok((token, region))
                 } else {
                     Err(Error::build(UNEXPECTED_TOKEN)
-                        .visual(Pointer::new(self.lexer.source, region))
+                        .pointer(self.lexer.source, region)
                         .help(format!("expected `{expect}`")))
                 }
             }
             None => {
                 let source_len = self.lexer.source.len();
                 Err(Error::build(UNEXPECTED_EOF)
-                    .visual(Pointer::new(
-                        self.lexer.source,
-                        (source_len..source_len).into(),
-                    ))
+                    .pointer(self.lexer.source, source_len..source_len)
                     .help(format!("expected `{expect}`")))
             }
         }

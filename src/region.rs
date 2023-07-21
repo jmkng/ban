@@ -1,4 +1,4 @@
-use crate::log::{Error, Pointer, INVALID_SYNTAX};
+use crate::log::{Error, INVALID_SYNTAX};
 use std::{
     cmp::{max, min},
     fmt::Display,
@@ -23,8 +23,8 @@ impl Region {
         }
     }
 
-    /// Return true if this region ends where the given Region begins,
-    /// or this Region begins where the given Region ends.
+    /// Return true if this [`Region`] ends where the given `Region` begins,
+    /// or this `Region` begins where the given `Region` ends.
     pub fn is_neighbor(&self, other: Self) -> bool {
         self.end == other.begin || other.end == self.begin
     }
@@ -51,7 +51,7 @@ impl Region {
         })
     }
 
-    /// Combine will merge the indices of two Region instances.
+    /// Combine will merge the indices of two [`Region`] instances.
     pub fn combine(self, other: Self) -> Self {
         Self {
             begin: min(self.begin, other.begin),
@@ -59,15 +59,15 @@ impl Region {
         }
     }
 
-    /// Access the literal value of a Region.
+    /// Access the literal value of a [`Region`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the Region is out of bounds in the given source text.
+    /// Returns an [`Error`] if the `Region` is out of bounds in the given source text.
     pub fn literal<'source>(&self, source: &'source str) -> Result<&'source str, Error> {
         source.get(self.begin..self.end).ok_or_else(|| {
             Error::build(INVALID_SYNTAX)
-                .visual(Pointer::new(source, (self.begin..self.end).into()))
+                .pointer(source, self.begin..self.end)
                 .help(
                     "unable to locate literal value in source text, was the source modified \
                     after template compilation?",
