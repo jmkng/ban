@@ -1,9 +1,3 @@
-//! Ban parser.
-//!
-//! Utilizes a Lexer to receive instances of Region, which it uses to construct
-//! a new Template containing the Abstract Syntax Tree.
-//!
-//! This template can be combined with some Store data to produce output.
 pub mod scope;
 pub mod tree;
 
@@ -13,24 +7,22 @@ mod state;
 use crate::{
     compile::{
         lex::{token::Token, LexResult, LexResultMust, Lexer},
-        parse::{
-            block::Block,
-            state::State,
-            tree::{
-                Arguments, Base, Call, Comparison, Expression, Identifier, Key, Literal, Output,
-                Tree, Variable,
-            },
-        },
+        parse::{block::Block, state::State, tree::*},
         Keyword, Operator, Scope, Template,
     },
-    log::{expected_keyword, Error, Pointer, INVALID_SYNTAX, UNEXPECTED_EOF, UNEXPECTED_TOKEN},
+    log::{
+        expected_keyword, expected_operator, unexpected_eof, Error, Pointer, INVALID_SYNTAX,
+        UNEXPECTED_EOF, UNEXPECTED_TOKEN,
+    },
     region::Region,
 };
 use serde_json::{Number, Value};
 use std::ops::Range;
 
+use self::state::CompareState;
+
 pub struct Parser<'source> {
-    /// Lexer used to pull from source as tokens instead of raw text.
+    /// `Lexer` used to pull from source as tokens instead of raw text.
     lexer: Lexer<'source>,
     /// Store peeked tokens.
     ///
@@ -39,7 +31,7 @@ pub struct Parser<'source> {
 }
 
 impl<'source> Parser<'source> {
-    /// Create a new Parser from the given string.
+    /// Create a new `Parser` from the given string.
     #[inline]
     pub fn new(source: &'source str) -> Self {
         Self {
@@ -48,9 +40,9 @@ impl<'source> Parser<'source> {
         }
     }
 
-    /// Compile the template.
+    /// Compile a [`Template`].
     ///
-    /// Returns a new Template, which can be executed with some Store
+    /// Returns a new `Template`, which can be executed with some [`Store`][`crate::Store`]
     /// data to receive output.
     pub fn compile(mut self) -> Result<Template<'source>, Error> {
         // Temporary storage for fragments of larger expressions.
@@ -105,9 +97,9 @@ impl<'source> Parser<'source> {
         })
     }
 
-    /// Parse a block.
+    /// Parse a [`Block`].
     ///
-    /// A block is a call to evaluate some kind of expression which may have
+    /// A `Block` is a call to evaluate some kind of expression which may have
     /// side effects on the Store data.
     fn parse_block(&mut self) -> Result<Block, Error> {
         // from
@@ -115,29 +107,31 @@ impl<'source> Parser<'source> {
         // (* if name == "taylor" *)
         //   Welcome back, Taylor.
         // (* endfor *)
-        //             |
-        //             to
+        //          |
+        //          to
         let (keyword, _) = self.parse_keyword()?;
 
         match keyword {
             Keyword::If => {
-                let expression = self.parse_if()?;
+                let compare = self.parse_compare()?;
+                // TODO: Resume by expecting EndBlock
                 todo!();
-                // Ok(Block::If(expression))
+                // Ok(Block::If(compare))
             }
             _ => todo!(),
         }
     }
 
-    /// Parse an expression.
+    /// Parse an [`Expression`].
     ///
-    /// An expression is a call to render some kind of data,
+    /// An `Expression` is a call to render some kind of data,
     /// and may contain one or more "filters" which are used to modify the output.
     fn parse_expression(&mut self) -> Result<Expression, Error> {
         // (( name | prepend 1: "hello, " | append "!" | upper ))
-        // |                                                     |
-        // from                                                  to
+        // |                                                  |
+        // from                                               to
         let mut expression = Expression::Base(self.parse_base()?);
+        // TODO: Negation checks
 
         while self.next_is(Token::Pipe)? {
             self.next_must(Token::Pipe)?;
@@ -164,54 +158,149 @@ impl<'source> Parser<'source> {
 
     /// Returns the parse negated base of this [`Parser`].
     ///
-    /// Parse a Base, and include a boolean that is true when the token
-    /// before the Base is an Exclamation.
+    /// Parse a [`Base`], and include a boolean that is true when the token
+    /// before the Base is an exclamation.
     ///
     /// # Errors
     ///
-    /// Returns an error if the token before the Base is an Exclamation
-    /// but the Base and Exclamation are not neighbors.
+    /// Returns an error if the token before the `Base` is an exclamation
+    /// but the `Base` and exclamation are not neighbors.
     ///
+    /// ```text
     /// ! name <- invalid
-    ///
     /// !name <- valid
-    fn parse_negated_base(&mut self) -> Result<(bool, Base), Error> {
+    /// ```
+    ///
+    /// May also propagate an error that is generated while parsing the
+    /// actual `Base`.
+    fn parse_negated_base(&mut self) -> Result<Base, Error> {
         if self.next_is(Token::Exclamation)? {
             let exclamation = self.next_must(Token::Exclamation)?;
-            let base = self.parse_base()?;
+            let mut base = self.parse_base()?;
+
             if !base.get_region().is_neighbor(exclamation.1) {
-                todo!() // return err
+                return Err(Error::build(UNEXPECTED_TOKEN)
+                    .visual(Pointer::new(
+                        self.lexer.source,
+                        exclamation.1.combine(base.get_region()),
+                    ))
+                    .help(format!(
+                        "you can use `{}` to negate the base expression, \
+                        but you must remove the separating whitespace",
+                        Token::Exclamation
+                    )));
             }
-            Ok((true, base))
+            base.set_negate(true);
+            Ok(base)
         } else {
-            Ok((false, self.parse_base()?))
+            let mut base = self.parse_base()?;
+            base.set_negate(false);
+            Ok(base)
         }
     }
 
-    /// TODO
-    fn parse_if(&mut self) -> Result<(bool, Comparison), Error> {
-        // Input variants:
-        //
-        // this == that *)
-        // !this *)
-        let left = self.parse_negated_base()?;
-        match self.next_any_must()? {
-            (token, region) => match token {
-                Token::Operator(operator) => {
-                    let right = self.parse_negated_base()?;
+    /// Parse a [`Compare`].
+    ///
+    /// This `Compare` will contain all of the information necessary
+    /// to determine if the `if` block is considered true or false.
+    ///
+    /// Negated [`Base`] expressions are supported.
+    fn parse_compare(&mut self) -> Result<Compare, Error> {
+        // this >= that && these == those || a == b *)
+        // |                                       |
+        // from                                    to
+        let mut compare = Compare::new();
+        let mut state = CompareState::Base(false);
+
+        loop {
+            match state {
+                // Parse a `Base` and assign it to either "left" or "right"
+                // on the latest `Check` instance.
+                CompareState::Base(has_left) => {
+                    let base = self.parse_negated_base()?;
+                    if has_left {
+                        compare
+                            .last_check_mut_must("has_left implies that a check exists")
+                            .right = Some(base);
+                        state = CompareState::Transition;
+                    } else {
+                        compare.last_mut_must().push(Check::new(base));
+                        state = CompareState::Operator;
+                    };
                 }
-                _ => todo!(),
-            },
+                // Parse an `Operator` for the `Check`.
+                //
+                // Set state to CompareState::Transition if something like "&&", "||"
+                // or Token::EndBlock shows up.
+                CompareState::Operator => match self.peek_must()? {
+                    (token, region) => match token {
+                        Token::EndBlock => state = CompareState::Transition,
+                        Token::Operator(operator) => match operator {
+                            Operator::Assign => {
+                                // This might be a common mistake, so better to provide a more
+                                // detailed error.
+                                return Err(Error::build(UNEXPECTED_TOKEN)
+                                    .visual(Pointer::new(self.lexer.source, region))
+                                    .help(format!(
+                                    "`{}` is only valid in `let` block, did you mean to use `{}` \
+                                    to check for equality?",
+                                    Operator::Assign,
+                                    Operator::Equal
+                                )));
+                            }
+                            Operator::Or | Operator::And => state = CompareState::Transition,
+                            operator => {
+                                // Valid operators are handled here.
+                                self.next_any_must()?;
+                                compare
+                                    .last_check_mut_must("operator state implies that check exists")
+                                    .operator = Some(operator);
+
+                                state = CompareState::Base(true);
+                            }
+                        },
+                        token => {
+                            return Err(Error::build(UNEXPECTED_TOKEN)
+                                .visual(Pointer::new(self.lexer.source, region))
+                                .help(expected_operator(token)))
+                        }
+                    },
+                },
+                // Handle "&&", "||" and `Token::EndBlock`.
+                CompareState::Transition => match self.next_any_must()? {
+                    (Token::EndBlock, _) => break,
+                    (Token::Operator(operator), _) if operator == Operator::Or => {
+                        // Split up the `Path`.
+                        compare.split_path();
+                        state = CompareState::Base(false);
+                    }
+                    (Token::Operator(operator), _) if operator == Operator::And => {
+                        // Start a new `Check`, which requires a `Base`.
+                        let base = self.parse_negated_base()?;
+                        compare.split_check(base);
+                        state = CompareState::Operator;
+                    }
+                    (_, region) => {
+                        return Err(Error::build(UNEXPECTED_TOKEN)
+                            .visual(Pointer::new(self.lexer.source, region))
+                            .help(format!(
+                                "expected `{}`, `{}` or end of block",
+                                Operator::And,
+                                Operator::Or
+                            )))
+                    }
+                },
+            }
         }
-        let right = self.parse_negated_base()?;
-        todo!()
+
+        Ok(compare)
     }
 
-    /// Parse a Keyword.
+    /// Parse a [`Keyword`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the next token is not a Keyword.
+    /// Returns an error if the next token is not a `Keyword`.
     fn parse_keyword(&mut self) -> Result<(Keyword, Region), Error> {
         match self.next_any_must()? {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
@@ -221,43 +310,32 @@ impl<'source> Parser<'source> {
         }
     }
 
-    /// Parse an Arguments.
+    /// Parse an [`Arguments`].
     ///
-    /// A filter's arguments may come in two different forms, named or anonymous.
+    /// If no arguments exist, [`None`] is returned instead.
     ///
-    /// ## Named
+    /// # Errors
     ///
-    /// Named arguments have an explicit name. An argument name is an identifier
-    /// followed by a colon (:), and is always treated as a string.
-    ///
-    /// In this example, the name of the argument is "1" and the value is "hello, ".
-    ///
-    /// 1: "hello, "
-    ///
-    /// ## Anonymous
-    ///
-    /// Anonymous arguments have no explicitly assigned name, however they do still have
-    /// implicitly assigned names. View the filter module for more information on that.
-    ///
-    /// Here is an example of an anonymous argument:
-    ///
-    /// "hello, "
+    /// Propagates any errors that occur while parsing a [`Base`]
+    /// for the argument(s).
     fn parse_args(&mut self) -> Result<Option<Arguments>, Error> {
-        // Input variants:
-        //
-        // 1: "hello, " |
-        // "!" |
-        // |
-        // ))
         let mut values: Vec<(Option<Region>, Base)> = vec![];
 
         while !self.next_is(Token::Pipe)? && !self.next_is(Token::EndExpression)? {
-            let name_or_value = self.parse_base()?;
-
+            let name_or_value = self.parse_negated_base()?;
             if self.next_is(Token::Colon)? {
                 self.next_must(Token::Colon)?;
 
-                let value = self.parse_base()?;
+                if name_or_value.get_negate() {
+                    return Err(Error::build(INVALID_SYNTAX)
+                        .visual(Pointer::new(self.lexer.source, name_or_value.get_region()))
+                        .help(
+                            "you might have tried to negate the argument name rather than \
+                            the argument value",
+                        ));
+                }
+
+                let value = self.parse_negated_base()?;
                 values.push((Some(name_or_value.get_region()), value))
             } else {
                 values.push((None, name_or_value))
@@ -267,6 +345,7 @@ impl<'source> Parser<'source> {
             return Ok(None);
         }
 
+        // TODO: Move this to impl?
         // Gets the true Region of the given argument.
         let get_region = |pair: &(Option<Region>, Base)| {
             if pair.0.is_some() {
@@ -289,38 +368,37 @@ impl<'source> Parser<'source> {
         Ok(Some(Arguments { values, region }))
     }
 
-    /// Parse an Identifier.
+    /// Parse an [`Identifier`].
     ///
     /// # Errors
     ///
     /// Propagates an error from next_must if the next token is not an
-    /// Identifier.
+    /// [`Identifier`].
     fn parse_ident(&mut self) -> Result<Identifier, Error> {
         let (_, region) = self.next_must(Token::Identifier)?;
         Ok(Identifier { region })
     }
 
-    /// Parse a Base.
+    /// Parse a [`Base`].
     ///
-    /// A Base may be returned as a Literal or Variable based on the value.
+    /// A `Base` may be "negated", but this function is only responsible for
+    /// parsing the `Base` itself, and so returns a `Base` with the "negate"
+    /// property set to false.
     ///
-    /// ## Literal
-    ///
-    /// "hello world"
-    ///
-    /// -1000
-    ///
-    /// 1000
-    ///
-    /// 10.2
-    ///
-    /// ## Variable
-    ///
-    /// person.name
+    /// To parse a `Base` while checking for a negation operator, instead use
+    /// [`parse_base_negated`].
     fn parse_base(&mut self) -> Result<Base, Error> {
         let expression = match self.next_any_must()? {
-            (Token::Keyword(_), region) => {
-                let literal = self.parse_bool_literal(region)?;
+            // `Keyword` is valid as a `Base`, but only if it ends up
+            // being a boolean literal.
+            (Token::Keyword(keyword), region) => {
+                let literal = self
+                    .parse_bool_literal(region)
+                    // Set a more appropriate error message if this fails.
+                    .map_err(|e| {
+                        e.help(format!("only `true` or `false` boolean literal keywords are valid here, found `{}`", keyword))
+                    })?;
+
                 Base::Literal(literal)
             }
             (Token::Operator(operator), region) => match operator {
@@ -331,9 +409,10 @@ impl<'source> Parser<'source> {
                     // - 1000 | + 1000<- invalid
                     if !region.is_neighbor(next_region) {
                         return Err(Error::build(UNEXPECTED_TOKEN)
-                            .visual(Pointer::new(self.lexer.source, region))
+                            .visual(Pointer::new(self.lexer.source, region.combine(next_region)))
                             .help(format!(
-                                "you can use `{}` here to make `{}` a negative number, but you must remove the separating whitespace",
+                                "you can use `{}` to make `{}` a negative number, \
+                                but you must remove the separating whitespace",
                                 Operator::Subtract,
                                 &self.lexer.source[next_region],
                             )));
@@ -347,8 +426,8 @@ impl<'source> Parser<'source> {
                     return Err(Error::build(UNEXPECTED_TOKEN)
                         .visual(Pointer::new(self.lexer.source, region))
                         .help(format!(
-                            "only `{}` or `{}` operators to indicate a positive or negative numbers \
-                            are valid here",
+                            "only `{}` or `{}` operators to indicate a positive or negative \
+                            numbers are valid here",
                             Operator::Add,
                             Operator::Subtract
                         )));
@@ -370,35 +449,43 @@ impl<'source> Parser<'source> {
                     self.next_must(Token::Period)?;
                     path.push(self.parse_key()?);
                 }
-                Base::Variable(Variable { path })
+                Base::Variable(Variable::new(path))
             }
-            (_, region) => {
-                return Err(
-                    Error::build(UNEXPECTED_TOKEN).visual(Pointer::new(self.lexer.source, region))
-                )
+            (token, region) => {
+                println!("{}", token);
+                return Err(Error::build(UNEXPECTED_TOKEN)
+                    .visual(Pointer::new(self.lexer.source, region))
+                    .help(format!(
+                        "expected a variable or identifier, found `{}`",
+                        token
+                    )));
             }
         };
 
         Ok(expression)
     }
 
-    /// Parse a Literal containing a Value::String from the literal value
-    /// of the given Region.
+    /// Parse a [`Literal`] containing a [`Value::String`] from the literal value
+    /// of the given [`Region`].
     ///
     /// # Errors
     ///
-    /// Propagates an error from [parse_string()] if an unrecognized escape character
-    /// is found.
+    /// Propagates any errors that occur while parsing a literal string,
+    /// which may be caused by an unrecognized escape character.
     fn parse_string_literal(&mut self, region: Region) -> Result<Literal, Error> {
         let value = Value::String(self.parse_string(region)?);
-        Ok(Literal { value, region })
+        Ok(Literal {
+            value,
+            region,
+            negate: None,
+        })
     }
 
-    /// Parse a Key.
+    /// Parse a [`Key`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the next token is not a valid Identifier such as "one.two".
+    /// Returns an error if the next token is not a valid [`Identifier`].
     fn parse_key(&mut self) -> Result<Key, Error> {
         match self.next_any_must()? {
             (Token::Identifier, region) => Ok(Key::from(Identifier { region })),
@@ -408,7 +495,7 @@ impl<'source> Parser<'source> {
         }
     }
 
-    /// Parse a String from the literal value of the given Region.
+    /// Parse a [`String`] from the literal value of the given [`Region`].
     ///
     /// # Errors
     ///
@@ -451,12 +538,12 @@ impl<'source> Parser<'source> {
         Ok(string)
     }
 
-    /// Parse a Literal containing a Value::Number from the given Region.
+    /// Parse a [`Literal`] containing a [`Value::Number`] from the given [`Region`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the literal value of the Region cannot be converted
-    /// to a Value::Number.
+    /// Returns an error if the literal value of the `Region` cannot be converted
+    /// to a [`Value::Number`].
     fn parse_number_literal(&self, window: &str, region: Region) -> Result<Literal, Error> {
         let as_number: Number = window.parse().map_err(|_| {
             Error::build("unrecognizable number")
@@ -468,17 +555,14 @@ impl<'source> Parser<'source> {
                 ))
         })?;
 
-        Ok(Literal {
-            value: Value::Number(as_number),
-            region,
-        })
+        Ok(Literal::new(Value::Number(as_number), region))
     }
 
-    /// Return a Literal containing a Value::Bool from the Region.
+    /// Return a [`Literal`] containing a [`Value::Bool`] from the [`Region`].
     ///
     /// # Errors
     ///
-    /// If the Region does not point to a literal "true" or "false", an error is returned.
+    /// Returns an error if the `Region` does not point to a boolean literal.
     fn parse_bool_literal(&mut self, region: Region) -> Result<Literal, Error> {
         let value: &str = self
             .lexer
@@ -490,23 +574,24 @@ impl<'source> Parser<'source> {
             "true" => true,
             "false" => false,
             _ => {
-                return Err(Error::build("unrecognizable boolean")
+                return Err(Error::build(UNEXPECTED_TOKEN)
                     .visual(Pointer::new(self.lexer.source, region))
-                    .help("expected `true` or `false`"))
+                    .help("expected `true` or `false` boolean literal"))
             }
         };
 
         Ok(Literal {
             value: Value::Bool(bool),
             region,
+            negate: None,
         })
     }
 
-    /// Peek the next token.
+    /// Peek the next [`Token`].
     ///
     /// # Errors
     ///
-    /// Propagates any error reported by the underlying Lexer.
+    /// Propagates any error returned by the underlying Lexer.
     fn peek(&mut self) -> LexResult {
         if let o @ None = &mut self.buffer {
             *o = Some(self.lexer.next()?);
@@ -515,10 +600,25 @@ impl<'source> Parser<'source> {
         Ok(self.buffer.unwrap())
     }
 
-    /// Get the next token.
+    /// Peek the next [`Token`].
     ///
-    /// Prefers to pull a token from the internal buffer first, but will pull from
-    /// the lexer when the buffer is empty.
+    /// # Errors
+    ///
+    /// Returns an error if the [`Lexer`] returns [`None`], or when the `Lexer` returns
+    /// an error itself.
+    fn peek_must(&mut self) -> LexResultMust {
+        let peek = self.peek()?;
+        if peek.is_none() {
+            return Err(unexpected_eof(self.lexer.source));
+        }
+
+        Ok(peek.unwrap())
+    }
+
+    /// Get the next [`Token`].
+    ///
+    /// Prefers to pull a `Token` from the internal buffer first, but will pull from
+    /// the [`Lexer`] when the buffer is empty.
     fn next(&mut self) -> LexResult {
         match self.buffer.take() {
             Some(t) => Ok(t),
@@ -526,11 +626,11 @@ impl<'source> Parser<'source> {
         }
     }
 
-    /// Returns true if the given token matches the upcoming token.
+    /// Returns true if the given [`Token`] matches the upcoming token.
     ///
     /// # Errors
     ///
-    /// Propagates any errors reported by the underlying lexer.
+    /// Propagates any errors reported by the underlying [`Lexer`].
     fn next_is(&mut self, expect: Token) -> Result<bool, Error> {
         Ok(self
             .peek()?
@@ -538,12 +638,12 @@ impl<'source> Parser<'source> {
             .unwrap_or(false))
     }
 
-    /// Get the next token, and compare it to the given token.
+    /// Get the next [`Token`], and compare it to the given `Token`.
     ///
     /// # Errors
     ///
-    /// An error is returned if the next token does not match the given token,
-    /// or when [next()] returns None.
+    /// Returns an error if the next `Token` does not match the given `Token`,
+    /// or none are left.
     fn next_must(&mut self, expect: Token) -> LexResultMust {
         match self.next()? {
             Some((token, region)) => {
@@ -567,25 +667,17 @@ impl<'source> Parser<'source> {
         }
     }
 
-    /// Get the next token.
+    /// Get the next [`Token`].
     ///
-    /// Similar to "next()" but requires that a token is returned.
+    /// Similar to [`next`][`Parser::next`] but requires that a token is returned.
     ///
     /// # Errors
     ///
-    /// An error is returned if no more tokens are left.
+    /// Returns an error if no tokens are left.
     fn next_any_must(&mut self) -> LexResultMust {
         match self.next()? {
             Some((token, region)) => Ok((token, region)),
-            None => {
-                let source_len = self.lexer.source.len();
-                return Err(Error::build(UNEXPECTED_EOF)
-                    .visual(Pointer::new(
-                        self.lexer.source,
-                        (source_len..source_len).into(),
-                    ))
-                    .help("expected additional tokens, did you make sure all blocks and expressions are closed?"));
-            }
+            None => Err(unexpected_eof(self.lexer.source)),
         }
     }
 }
@@ -604,8 +696,8 @@ mod tests {
 
     #[test]
     fn test_parse_full_expression() {
-        let text = "hello (( name | prepend 1: \"hello, \" | append \"!\" | upper ))";
-        let result = Parser::new(text).compile();
+        let source = "hello (( name | prepend 1: \"hello, \" | append \"!\" | upper ))";
+        let result = Parser::new(source).compile();
         assert!(result.is_ok());
         // println!("{:#?}", result.unwrap().scope.tokens);
         // println!("{}", text.get(6..60).unwrap())
@@ -613,18 +705,80 @@ mod tests {
 
     #[test]
     fn test_parse_negative_num_err() {
-        let text = "balance: (( - 1000 ))";
-        let result = Parser::new(text).compile();
+        let source = "balance: (( - 1000 ))";
+        let result = Parser::new(source).compile();
         assert!(result.is_err(),);
     }
 
     #[test]
     fn test_peek_multiple() {
-        let text = "(( one two";
-        let mut parser = Parser::new(text);
+        let source = "(( one two";
+        let mut parser = Parser::new(source);
         assert!(parser.next().is_ok());
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
+    }
+
+    #[test]
+    fn test_parse_compare_valid() {
+        //                                                   |-| is_admin negated here
+        let source = "(* if this >= that && these == those || !is_admin *)";
+        //                  ------------    --------------    ---------
+        //                   Check 1     +     Check 2         Check 1
+        //                  ------------------------------    ---------
+        //                             Path 1                  Path 2
+        let mut parser = get_parser_n(source, 2);
+        let mut result = parser.parse_compare().unwrap();
+        assert_eq!(result.paths.len(), 2);
+        assert_eq!(result.paths.first().unwrap().len(), 2);
+        assert_eq!(result.paths.last().unwrap().len(), 1);
+
+        let is_admin_left = &result.last_check_mut_must("").left;
+        // The underlying `Region` only spans the actual `Base`, which is "is_admin"
+        // here, but get_region() is aware of negation and will return a new `Region`
+        // that includes the "!".
+        assert_eq!(
+            is_admin_left.get_region().literal(source).unwrap(),
+            "!is_admin"
+        );
+    }
+
+    #[test]
+    fn test_parse_compare_missing_base() {
+        let source = "(* if this >= *)";
+        //                         ^-- expected `Base` here
+        let mut parser = get_parser_n(source, 2);
+
+        let result = parser.parse_compare();
+        assert!(result.is_err());
+        println!("{:#}", result.unwrap_err());
+    }
+
+    #[test]
+    fn test_parse_compare_bad_operator() {
+        let source = "(* if this = that *)";
+        //                       ^-- did you mean `==`?
+        let mut parser = get_parser_n(source, 2);
+
+        let result = parser.parse_compare();
+        assert!(result.is_err());
+        // println!("{:#}", result.unwrap_err());
+    }
+
+    /// Return a [`Parser`] over the given text that has already read
+    /// "n" amount of tokens.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the first `n` tokens in the given source cause
+    /// the parser to return an error,
+    fn get_parser_n(source: &str, n: i8) -> Parser {
+        let mut parser = Parser::new(source);
+        for _ in 0..n {
+            parser.next().unwrap();
+        }
+
+        parser
     }
 }

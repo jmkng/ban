@@ -1,11 +1,11 @@
-use crate::compile::tree::{Comparison, Expression, LoopVariables};
+use crate::compile::tree::{Compare, Expression, LoopVariables};
 
 /// Represents a fragment of a parsed block.
 pub enum Block {
     /// The `(* if x > y *)` part of an "if" Block.
-    If(Comparison),
+    If(Compare),
     /// The `(* elseif n > m *) part of an "if" Block.
-    ElseIf(Comparison),
+    ElseIf(Compare),
     /// The (* else *) part of an "if" Block.
     Else,
     /// The (* endif *) part of an "if" Block.

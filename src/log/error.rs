@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::{compile::token::Token, log::Visual};
 
-use super::{RED, RESET};
+use super::{Pointer, RED, RESET};
 
 pub const UNEXPECTED_TOKEN: &str = "unexpected token";
 pub const UNEXPECTED_EOF: &str = "unexpected eof";
@@ -158,7 +158,7 @@ impl PartialEq for Error {
 }
 
 /// Return a formatted string describing an unexpected keyword.
-pub fn expected_keyword(received: Token) -> String {
+pub fn expected_keyword(received: impl Display) -> String {
     format!(
         "expected keyword like \"if\", \"let\", or \"for\", found {}",
         received
@@ -166,12 +166,19 @@ pub fn expected_keyword(received: Token) -> String {
 }
 
 /// Return a formatted string describing an unexpected operator.
-pub fn expected_operator(received: char) -> String {
+pub fn expected_operator(received: impl Display) -> String {
     format!(
         "expected operator like `==`, `!=, `>=`, `<=`, `||`, `&&`, `=`, `|`, `!`, \
         found {}",
         received
     )
+}
+
+/// Return an Error explaining that the end of source was not expected
+/// at this time.
+pub fn unexpected_eof(source: &str) -> Error {
+    let source_len = source.len();
+    Error::build(UNEXPECTED_EOF).visual(Pointer::new(source, (source_len..source_len).into()))
 }
 
 #[cfg(test)]

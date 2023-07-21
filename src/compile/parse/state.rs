@@ -27,3 +27,39 @@ pub enum State {
         region: Region,
     },
 }
+
+/// Describes the build state of a `Compare`.
+pub enum CompareState {
+    /// Expect a `Base`,
+    ///
+    /// The boolean will be true when the left (first)
+    /// `Base` has already been set.
+    ///
+    /// When boolean is true, the "right" property will be
+    /// populated with the `Base`, else the "left" property
+    /// of a new `Check` will be populated.
+    Base(bool),
+    /// Expect an `Operator`.
+    ///
+    /// If a valid `Operator` is received, the "operator"
+    /// property of the latest `Check` is set.
+    ///
+    /// If a transition such as "Operator::And", "Operator::Or"
+    /// or "Token::EndBlock" is found, state will switch to
+    /// `Transition` and loop will immediately reset.
+    Operator,
+    /// Expect `Operator::And`, `Operator::Or` or
+    /// `Token::EndBlock`.
+    ///
+    /// Both `Operator::And` and `Operator::Or` cause a new
+    /// `Check` to be started.
+    ///
+    /// `Token::EndBlock` will terminate the state machine.
+    Transition,
+}
+
+impl Default for CompareState {
+    fn default() -> Self {
+        CompareState::Base(false)
+    }
+}
