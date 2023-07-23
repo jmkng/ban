@@ -4,22 +4,21 @@ pub mod tree;
 mod block;
 mod state;
 
+use self::state::CheckState;
 use crate::{
     compile::{
         lex::{token::Token, LexResult, LexResultMust, Lexer},
-        parse::{block::Block, state::State, tree::*},
+        parse::{block::Block, state::BlockState, tree::*},
         Keyword, Operator, Scope, Template,
     },
     log::{
-        expected_keyword, expected_operator, unexpected_eof, Error, Pointer, INVALID_SYNTAX,
+        error_eof, expected_keyword, expected_operator, Error, INVALID_SYNTAX, UNEXPECTED_BLOCK,
         UNEXPECTED_EOF, UNEXPECTED_TOKEN,
     },
     region::Region,
 };
 use serde_json::{Number, Value};
 use std::ops::Range;
-
-use self::state::CompareState;
 
 pub struct Parser<'source> {
     /// `Lexer` used to pull from source as tokens instead of raw text.
@@ -45,29 +44,169 @@ impl<'source> Parser<'source> {
     /// Returns a new `Template`, which can be executed with some [`Store`][`crate::Store`]
     /// data to receive output.
     pub fn compile(mut self) -> Result<Template<'source>, Error> {
-        // Temporary storage for fragments of larger expressions.
-        let mut states: Vec<State> = vec![];
-
-        // Contains the distinct Tree instances within a specific area of the source.
+        // Temporary storage for fragments of larger blocks.
+        let mut states: Vec<BlockState> = vec![];
+        // Storage for a stack of [`Scope`] instances.
         //
-        // Used to remember what belongs to the if branch and what belongs to the else
-        // branch in an "if" tag, for example.
+        // When a closing block such as "endif" is seen, they are rolled into a
+        // [`Tree`] instance for the top level scope.
         let mut scopes: Vec<Scope> = vec![Scope::new()];
 
         while let Some(next) = self.next()? {
             let tree = match next {
                 (Token::Raw, region) => Tree::Raw(region),
+                // Beginning of an expression.
+                //
+                // Expected:
+                //
+                // (BASE) [FILTER ...]
+                // ------
                 (Token::BeginExpression, region) => {
                     let expression = self.parse_expression()?;
-                    let (_, next_region) = self.next_must(Token::EndExpression)?;
-                    let merge = region.combine(next_region);
-                    Tree::Output(Output::from((expression, merge)))
+                    let end = self.next_must(Token::EndExpression)?.1.combine(region);
+                    Tree::Output(Output::from((expression, end)))
                 }
+                // Beginning of a block.
+                //
+                // Expected:
+                //
+                // (KEYWORD)
+                // ---------
                 (Token::BeginBlock, region) => {
                     let block = self.parse_block()?;
-                    todo!()
+                    let end = self.next_must(Token::EndBlock)?.1.combine(region);
+
+                    match block {
+                        // Beginning of an "if" block.
+                        //
+                        // Expected:
+                        //
+                        // [ELSEIF ...] | [ELSE] | ENDIF
+                        //                         -----
+                        Block::If(tr) => {
+                            states.push(BlockState::If {
+                                else_if: false,
+                                tree: tr,
+                                region: end,
+                                has_else: false,
+                            });
+                            scopes.push(Scope::new());
+                            continue;
+                        }
+                        // The "else if" fragment of an "if" block.
+                        //
+                        // Expected:
+                        //
+                        // [ELSEIF ...] | [ELSE] | ENDIF
+                        //                         -----
+                        Block::ElseIf(tr) => {
+                            let error = || {
+                                Error::build(UNEXPECTED_BLOCK)
+                                    .pointer(self.lexer.source, end)
+                                    .help(
+                                        "unexpected `else if` block, did you forget to write \
+                                        an `if` block first?",
+                                    )
+                            };
+
+                            match states.last_mut().ok_or_else(error)? {
+                                BlockState::If {
+                                    has_else: has_else @ false,
+                                    ..
+                                } => *has_else = true,
+                                _ => return Err(error()),
+                            }
+
+                            states.push(BlockState::If {
+                                else_if: true,
+                                tree: tr,
+                                region: end,
+                                has_else: false,
+                            });
+
+                            scopes.push(Scope::new());
+                            scopes.push(Scope::new());
+                            continue;
+                        }
+                        // The "else" fragment of an "if" block.
+                        //
+                        // Expected:
+                        //
+                        // ENDIF
+                        // -----
+                        Block::Else => {
+                            let error = || {
+                                Error::build(UNEXPECTED_BLOCK)
+                                    .pointer(self.lexer.source, end)
+                                    .help(
+                                        "unexpected `else` block, did you forget to write an \
+                                        `if` block first?",
+                                    )
+                            };
+
+                            match states.last_mut().ok_or_else(error)? {
+                                BlockState::If {
+                                    has_else: has_else @ false,
+                                    region: end,
+                                    ..
+                                } => *has_else = true,
+                                _ => return Err(error()),
+                            }
+
+                            scopes.push(Scope::new());
+                            continue;
+                        }
+                        // End of an "if" block.
+                        //
+                        // Expected:
+                        //
+                        // ...
+                        Block::EndIf => {
+                            let error = || {
+                                Error::build(UNEXPECTED_BLOCK)
+                                    .pointer(self.lexer.source, end)
+                                    .help(
+                                        "unexpected end of `if` block, did you forget to write \
+                                        an `if` block first?",
+                                    )
+                            };
+
+                            loop {
+                                match states.pop().ok_or_else(error)? {
+                                    BlockState::If {
+                                        else_if,
+                                        tree,
+                                        has_else,
+                                        region,
+                                        ..
+                                    } => {
+                                        let else_branch = has_else.then(|| scopes.pop().unwrap());
+                                        let then_branch = scopes.pop().unwrap();
+
+                                        let tree = Tree::If(If {
+                                            tree,
+                                            then_branch,
+                                            else_branch,
+                                            region: end.combine(region),
+                                        });
+                                        if !else_if {
+                                            break tree;
+                                        }
+                                        scopes.last_mut().unwrap().data.push(tree);
+                                    }
+                                    _ => return Err(error()),
+                                }
+                            }
+                        }
+                        // TODO
+                        Block::For(_, _) => todo!(),
+                        // TODO
+                        Block::EndFor => todo!(),
+                        // TODO
+                        Block::Include(_, _) => todo!(),
+                    }
                 }
-                _ => todo!(),
+                _ => unreachable!("lexer will error early unless begin block"),
             };
 
             scopes.last_mut().unwrap().data.push(tree);
@@ -75,8 +214,8 @@ impl<'source> Parser<'source> {
 
         if let Some(block) = states.first() {
             let (block, close, region) = match block {
-                State::If { region, .. } => ("if", "endif", region),
-                State::For { region, .. } => ("for", "endfor", region),
+                BlockState::If { region, .. } => ("if", "endif", region),
+                BlockState::For { region, .. } => ("for", "endfor", region),
             };
 
             return Err(Error::build(INVALID_SYNTAX)
@@ -86,11 +225,7 @@ impl<'source> Parser<'source> {
                 )));
         }
 
-        assert!(
-            scopes.len() == 1,
-            "parser should never have >1 scope after compilation"
-        );
-
+        assert!(scopes.len() == 1, "must have single scope");
         Ok(Template {
             scope: scopes.remove(0),
             source: self.lexer.source,
@@ -100,7 +235,7 @@ impl<'source> Parser<'source> {
     /// Parse a [`Block`].
     ///
     /// A `Block` is a call to evaluate some kind of expression which may have
-    /// side effects on the Store data.
+    /// side effects on the `Store` data.
     fn parse_block(&mut self) -> Result<Block, Error> {
         // from
         // |
@@ -113,12 +248,38 @@ impl<'source> Parser<'source> {
 
         match keyword {
             Keyword::If => {
-                let compare = self.parse_compare()?;
-                // TODO: Resume by expecting EndBlock
-                todo!();
-                // Ok(Block::If(compare))
+                let tree = self.parse_tree()?;
+                Ok(Block::If(tree))
             }
-            _ => todo!(),
+            Keyword::Else => {
+                if self.peek_is(Token::Keyword(Keyword::If))? {
+                    self.next_must(Token::Keyword(Keyword::If))?;
+                    let tree = self.parse_tree()?;
+                    Ok(Block::ElseIf(tree))
+                } else {
+                    Ok(Block::Else)
+                }
+            }
+            Keyword::EndIf => Ok(Block::EndIf),
+            // TODO
+            Keyword::Let => todo!(),
+            // TODO
+            Keyword::For => {
+                //Keyword::In => todo!(),
+                todo!()
+            }
+            // TODO
+            Keyword::EndFor => todo!(),
+            // TODO
+            Keyword::Include => todo!(),
+            // TODO
+            Keyword::Extends => todo!(),
+            // TODO
+            Keyword::Block => todo!(),
+            // TODO
+            Keyword::EndBlock => todo!(),
+            // TODO
+            _ => todo!(), // err
         }
     }
 
@@ -131,13 +292,12 @@ impl<'source> Parser<'source> {
         // |                                                  |
         // from                                               to
         let mut expression = Expression::Base(self.parse_base()?);
-        // TODO: Negation checks
 
-        while self.next_is(Token::Pipe)? {
+        while self.peek_is(Token::Pipe)? {
             self.next_must(Token::Pipe)?;
+
             let name = self.parse_ident()?;
             let arguments = self.parse_args()?;
-
             let end_as: Region = if arguments.is_some() {
                 arguments.as_ref().unwrap().region
             } else {
@@ -156,90 +316,54 @@ impl<'source> Parser<'source> {
         Ok(expression)
     }
 
-    /// Returns the parse negated base of this [`Parser`].
+    /// Parse a [`CheckTree`].
     ///
-    /// Parse a [`Base`], and include a boolean that is true when the token
-    /// before the Base is an exclamation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the token before the `Base` is an exclamation
-    /// but the `Base` and exclamation are not neighbors.
-    ///
-    /// ```text
-    /// ! name <- invalid
-    /// !name <- valid
-    /// ```
-    ///
-    /// May also propagate an error that is generated while parsing the
-    /// actual `Base`.
-    fn parse_negated_base(&mut self) -> Result<Base, Error> {
-        if self.next_is(Token::Exclamation)? {
-            let exclamation = self.next_must(Token::Exclamation)?;
-            let mut base = self.parse_base()?;
-
-            if !base.get_region().is_neighbor(exclamation.1) {
-                return Err(Error::build(UNEXPECTED_TOKEN)
-                    .pointer(self.lexer.source, exclamation.1.combine(base.get_region()))
-                    .help(format!(
-                        "you can use `{}` to negate the expression, but you must remove the separating whitespace",
-                        Token::Exclamation,
-                    )));
-            }
-            base.set_negate(true);
-            Ok(base)
-        } else {
-            let mut base = self.parse_base()?;
-            base.set_negate(false);
-            Ok(base)
-        }
-    }
-
-    /// Parse a [`Compare`].
-    ///
-    /// This `Compare` will contain all of the information necessary
-    /// to determine if the `if` block is considered true or false.
-    ///
-    /// Negated [`Base`] expressions are supported.
-    fn parse_compare(&mut self) -> Result<Compare, Error> {
+    /// This `CheckTree` will contain all of the information necessary
+    /// to determine if the block should pass.
+    fn parse_tree(&mut self) -> Result<CheckTree, Error> {
         // this >= that && these == those || a == b *)
-        // |                                       |
-        // from                                    to
-        let mut compare = Compare::new();
-        let mut state = CompareState::default();
+        // |-------------    --------------   ------|
+        // from  |                  |            |  to
+        //       |                  |            |
+        //       negatable          negatable    negatable
+        let mut tree = CheckTree::new();
+        let mut state = CheckState::default();
 
         loop {
             match state {
                 // Parse a `Base` and assign it to either "left" or "right"
                 // on the latest `Check` instance.
-                CompareState::Base(has_left) => {
-                    let base = self.parse_negated_base()?;
+                CheckState::Base(has_left) => {
                     if has_left {
-                        compare
-                            .last_check_mut_must("has_left implies that a check exists")
+                        let base = self.parse_base()?;
+                        tree.last_check_mut_must("has_left implies that a check exists")
                             .right = Some(base);
-                        state = CompareState::Transition;
+
+                        state = CheckState::Transition;
                     } else {
-                        compare.last_mut_must().push(Check::new(base));
-                        state = CompareState::Operator;
+                        let (base, negated) = if self.peek_is(Token::Keyword(Keyword::Not))? {
+                            self.next_must(Token::Keyword(Keyword::Not))?;
+                            (self.parse_base()?, true)
+                        } else {
+                            (self.parse_base()?, false)
+                        };
+                        tree.last_mut_must().push(Check::new(base, negated));
+
+                        state = CheckState::Operator;
                     };
                 }
                 // Parse an `Operator` for the `Check`.
                 //
                 // Set state to CompareState::Transition if something like "&&", "||"
                 // or Token::EndBlock shows up.
-                CompareState::Operator => match self.peek_must()? {
+                CheckState::Operator => match self.peek_must()? {
                     (token, region) => match token {
-                        Token::EndBlock | Token::Or | Token::And => {
-                            state = CompareState::Transition
-                        }
+                        Token::EndBlock | Token::Or | Token::And => state = CheckState::Transition,
                         Token::Operator(op) => {
-                            self.next_any_must()?;
-                            compare
-                                .last_check_mut_must("operator state implies that check exists")
+                            self.next_must(Token::Operator(op))?;
+                            tree.last_check_mut_must("operator state implies that check exists")
                                 .operator = Some(op);
-
-                            state = CompareState::Base(true);
+                            state = CheckState::Base(true);
                         }
                         unexpected => {
                             return Err(Error::build(UNEXPECTED_TOKEN)
@@ -249,18 +373,25 @@ impl<'source> Parser<'source> {
                     },
                 },
                 // Handle "&&", "||" and `Token::EndBlock`.
-                CompareState::Transition => match self.next_any_must()? {
+                CheckState::Transition => match self.peek_must()? {
                     (Token::EndBlock, _) => break,
                     (Token::Or, _) => {
+                        self.next_must(Token::Or)?;
                         // Split up the `Path`.
-                        compare.split_path();
-                        state = CompareState::Base(false);
+                        tree.split_branch();
+                        state = CheckState::Base(false);
                     }
                     (Token::And, _) => {
+                        self.next_must(Token::And)?;
                         // Start a new `Check`, which requires a `Base`.
-                        let base = self.parse_negated_base()?;
-                        compare.split_check(base);
-                        state = CompareState::Operator;
+                        let (base, negated) = if self.peek_is(Token::Keyword(Keyword::Not))? {
+                            self.next_must(Token::Keyword(Keyword::Not))?;
+                            (self.parse_base()?, true)
+                        } else {
+                            (self.parse_base()?, false)
+                        };
+                        tree.split_check(Check::new(base, negated));
+                        state = CheckState::Operator;
                     }
                     unexpected => {
                         return Err(Error::build(UNEXPECTED_TOKEN)
@@ -276,7 +407,7 @@ impl<'source> Parser<'source> {
             }
         }
 
-        Ok(compare)
+        Ok(tree)
     }
 
     /// Parse a [`Keyword`].
@@ -304,21 +435,11 @@ impl<'source> Parser<'source> {
     fn parse_args(&mut self) -> Result<Option<Arguments>, Error> {
         let mut values: Vec<(Option<Region>, Base)> = vec![];
 
-        while !self.next_is(Token::Pipe)? && !self.next_is(Token::EndExpression)? {
-            let name_or_value = self.parse_negated_base()?;
-            if self.next_is(Token::Colon)? {
+        while !self.peek_is(Token::Pipe)? && !self.peek_is(Token::EndExpression)? {
+            let name_or_value = self.parse_base()?;
+            if self.peek_is(Token::Colon)? {
                 self.next_must(Token::Colon)?;
-
-                if name_or_value.get_negate() {
-                    return Err(Error::build(INVALID_SYNTAX)
-                        .pointer(self.lexer.source, name_or_value.get_region())
-                        .help(
-                            "you might have tried to negate the argument name rather than \
-                            the argument value",
-                        ));
-                }
-
-                let value = self.parse_negated_base()?;
+                let value = self.parse_base()?;
                 values.push((Some(name_or_value.get_region()), value))
             } else {
                 values.push((None, name_or_value))
@@ -329,6 +450,7 @@ impl<'source> Parser<'source> {
         }
 
         // TODO: Move this to impl?
+
         // Gets the true Region of the given argument.
         let get_region = |pair: &(Option<Region>, Base)| {
             if pair.0.is_some() {
@@ -372,18 +494,14 @@ impl<'source> Parser<'source> {
     /// [`parse_base_negated`].
     fn parse_base(&mut self) -> Result<Base, Error> {
         let expression = match self.next_any_must()? {
-            // `Keyword` is valid as a `Base`, but only if it ends up
-            // being a boolean literal.
-            (Token::Keyword(keyword), region) => {
-                let literal = self
-                    .parse_bool_literal(region)
-                    // Set a more appropriate error message if this fails.
-                    .map_err(|e| {
-                        e.help(format!("only `true` or `false` boolean literal keywords are valid here, found `{}`", keyword))
-                    })?;
-
-                Base::Literal(literal)
-            }
+            (Token::False, region) => Base::Literal(Literal {
+                value: Value::Bool(false),
+                region,
+            }),
+            (Token::True, region) => Base::Literal(Literal {
+                value: Value::Bool(true),
+                region,
+            }),
             (Token::Operator(operator), region) => match operator {
                 Operator::Add | Operator::Subtract => {
                     let (_, next_region) = self.next_must(Token::Number)?;
@@ -428,7 +546,7 @@ impl<'source> Parser<'source> {
                 let mut path = vec![Key::from(Identifier { region })];
 
                 // Keep chaining keys as long as we see a period.
-                while self.next_is(Token::Period)? {
+                while self.peek_is(Token::Period)? {
                     self.next_must(Token::Period)?;
                     path.push(self.parse_key()?);
                 }
@@ -457,11 +575,7 @@ impl<'source> Parser<'source> {
     /// which may be caused by an unrecognized escape character.
     fn parse_string_literal(&mut self, region: Region) -> Result<Literal, Error> {
         let value = Value::String(self.parse_string(region)?);
-        Ok(Literal {
-            value,
-            region,
-            negate: None,
-        })
+        Ok(Literal { value, region })
     }
 
     /// Parse a [`Key`].
@@ -541,35 +655,6 @@ impl<'source> Parser<'source> {
         Ok(Literal::new(Value::Number(as_number), region))
     }
 
-    /// Return a [`Literal`] containing a [`Value::Bool`] from the [`Region`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the `Region` does not point to a boolean literal.
-    fn parse_bool_literal(&mut self, region: Region) -> Result<Literal, Error> {
-        let value: &str = self
-            .lexer
-            .source
-            .get::<Range<usize>>(region.into())
-            .expect("window over source should always exist");
-
-        let bool = match value {
-            "true" => true,
-            "false" => false,
-            _ => {
-                return Err(Error::build(UNEXPECTED_TOKEN)
-                    .pointer(self.lexer.source, region)
-                    .help("expected `true` or `false` boolean literal"))
-            }
-        };
-
-        Ok(Literal {
-            value: Value::Bool(bool),
-            region,
-            negate: None,
-        })
-    }
-
     /// Peek the next [`Token`].
     ///
     /// # Errors
@@ -592,10 +677,22 @@ impl<'source> Parser<'source> {
     fn peek_must(&mut self) -> LexResultMust {
         let peek = self.peek()?;
         if peek.is_none() {
-            return Err(unexpected_eof(self.lexer.source));
+            return Err(error_eof(self.lexer.source));
         }
 
         Ok(peek.unwrap())
+    }
+
+    /// Returns true if the next token matches the given [`Token`].
+    ///
+    /// # Errors
+    ///
+    /// Propagates any errors reported by the underlying [`Lexer`].
+    fn peek_is(&mut self, expect: Token) -> Result<bool, Error> {
+        Ok(self
+            .peek()?
+            .map(|(token, _)| token == expect)
+            .unwrap_or(false))
     }
 
     /// Get the next [`Token`].
@@ -607,18 +704,6 @@ impl<'source> Parser<'source> {
             Some(t) => Ok(t),
             None => self.lexer.next(),
         }
-    }
-
-    /// Returns true if the given [`Token`] matches the upcoming token.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any errors reported by the underlying [`Lexer`].
-    fn next_is(&mut self, expect: Token) -> Result<bool, Error> {
-        Ok(self
-            .peek()?
-            .map(|(token, _)| token == expect)
-            .unwrap_or(false))
     }
 
     /// Get the next [`Token`], and compare it to the given `Token`.
@@ -657,7 +742,7 @@ impl<'source> Parser<'source> {
     fn next_any_must(&mut self) -> LexResultMust {
         match self.next()? {
             Some((token, region)) => Ok((token, region)),
-            None => Err(unexpected_eof(self.lexer.source)),
+            None => Err(error_eof(self.lexer.source)),
         }
     }
 }
@@ -701,18 +786,20 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_compare_valid() {
-        //                                                   |-| is_admin negated here
-        let source = "(* if this >= that && these == those || !is_admin *)";
-        //                  ------------    --------------    ---------
-        //                   Check 1     +     Check 2         Check 1
-        //                  ------------------------------    ---------
-        //                             Path 1                  Path 2
+    fn test_parse_tree_valid() {
+        //                                                   |---| is_admin negated here
+        let source = "(* if this >= that && these == those || not is_admin *)";
+        //                  ------------    --------------    ------------
+        //                     Check 1    +     Check 2          Check 1
+        //                  ------------------------------    ------------
+        //                             Branch 1                  Branch 2
+        //                  ----------------------------------------------
+        //                                       Tree
         let mut parser = get_parser_n(source, 2);
-        let mut result = parser.parse_compare().unwrap();
-        assert_eq!(result.paths.len(), 2);
-        assert_eq!(result.paths.first().unwrap().len(), 2);
-        assert_eq!(result.paths.last().unwrap().len(), 1);
+        let mut result = parser.parse_tree().unwrap();
+        assert_eq!(result.branches.len(), 2);
+        assert_eq!(result.branches.first().unwrap().len(), 2);
+        assert_eq!(result.branches.last().unwrap().len(), 1);
 
         let is_admin_left = &result.last_check_mut_must("").left;
         // The underlying `Region` only spans the actual `Base`, which is "is_admin"
@@ -720,28 +807,29 @@ mod tests {
         // that includes the "!".
         assert_eq!(
             is_admin_left.get_region().literal(source).unwrap(),
-            "!is_admin"
+            "is_admin"
         );
+        // println!("{:?}", result);
     }
 
     #[test]
-    fn test_parse_compare_missing_base() {
+    fn test_parse_tree_missing_base() {
         let source = "(* if this >= *)";
         //                         ^-- expected `Base` here
         let mut parser = get_parser_n(source, 2);
 
-        let result = parser.parse_compare();
+        let result = parser.parse_tree();
         assert!(result.is_err());
-        println!("{:#}", result.unwrap_err());
+        // println!("{:#}", result.unwrap_err());
     }
 
     #[test]
-    fn test_parse_compare_bad_operator() {
+    fn test_parse_tree_bad_operator() {
         let source = "(* if this = that *)";
         //                       ^-- did you mean `==`?
         let mut parser = get_parser_n(source, 2);
 
-        let result = parser.parse_compare();
+        let result = parser.parse_tree();
         assert!(result.is_err());
         // println!("{:#}", result.unwrap_err());
     }

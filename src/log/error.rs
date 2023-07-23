@@ -5,7 +5,9 @@ use crate::{log::Visual, region::Region};
 use super::{Pointer, RED, RESET};
 
 pub const UNEXPECTED_TOKEN: &str = "unexpected token";
+pub const UNEXPECTED_BLOCK: &str = "unexpected block";
 pub const UNEXPECTED_EOF: &str = "unexpected eof";
+pub const INCOMPATIBLE_TYPES: &str = "incompatible types";
 pub const INVALID_SYNTAX: &str = "invalid syntax";
 pub const INVALID_FILTER: &str = "invalid filter";
 
@@ -206,19 +208,20 @@ pub fn expected_keyword(received: impl Display) -> String {
 pub fn expected_operator(received: impl Display) -> String {
     format!(
         "expected operator like `+`, `-`, `*`, `/`, `==`, `!=`, `>=`, `<=`, \
-        found {}",
+        found `{}`",
         received
     )
 }
 
 /// Return an [`Error`] explaining that the end of source was not expected
 /// at this time.
-pub fn unexpected_eof(source: &str) -> Error {
+pub fn error_eof(source: &str) -> Error {
     let source_len = source.len();
     Error::build(UNEXPECTED_EOF)
         .pointer(source, source_len..source_len)
-        .help(
-            "additional tokens were expected due to the previous tokens, \
-            did you close the block or expression?",
-        )
+        .help("expected additional tokens, did you close all blocks and expressions?")
+}
+
+pub fn error_write() -> Error {
+    Error::build("write failure").help("failed to write result of render, are you low on memory?")
 }

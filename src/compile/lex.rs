@@ -4,7 +4,7 @@ mod state;
 
 use crate::{
     compile::{lex::state::State, token::Token, Keyword, Operator},
-    log::{expected_operator, Error, Pointer, INVALID_SYNTAX, UNEXPECTED_TOKEN},
+    log::{expected_operator, Error, INVALID_SYNTAX, UNEXPECTED_TOKEN},
     region::Region,
     Builder,
 };
@@ -171,15 +171,19 @@ impl<'source> Lexer<'source> {
         T: Iterator<Item = (usize, char)>,
     {
         let (position, token) = match (previous, iter.next()) {
+            // Double operators:
             ('=', Some((usize, '='))) => (usize, Token::Operator(Operator::Equal)),
             ('!', Some((usize, '='))) => (usize, Token::Operator(Operator::NotEqual)),
             ('>', Some((usize, '='))) => (usize, Token::Operator(Operator::GreaterOrEqual)),
             ('<', Some((usize, '='))) => (usize, Token::Operator(Operator::LesserOrEqual)),
-            ('=', Some(_)) | ('=', None) => (from, Token::Assign),
             ('|', Some((usize, '|'))) => (usize, Token::Or),
             ('&', Some((usize, '&'))) => (usize, Token::And),
-            ('|', Some(_)) | ('|', None) => (from, Token::Pipe),
-            ('!', Some(_)) | ('!', None) => (from, Token::Exclamation),
+            // Single operators:
+            ('=', _) => (from, Token::Assign),
+            ('|', _) => (from, Token::Pipe),
+            ('!', _) => (from, Token::Exclamation),
+            ('>', _) => (from, Token::Operator(Operator::Greater)),
+            ('<', _) => (from, Token::Operator(Operator::Lesser)),
             _ => {
                 return Err(Error::build(UNEXPECTED_TOKEN)
                     .pointer(self.source, from..from + 1)
@@ -287,6 +291,7 @@ impl<'source> Lexer<'source> {
                 .expect("valid range is required to check keyword");
 
             let token = match range_text.to_lowercase().as_str() {
+                "not" => Token::Keyword(Keyword::Not),
                 "if" => Token::Keyword(Keyword::If),
                 "else" => Token::Keyword(Keyword::Else),
                 "endif" => Token::Keyword(Keyword::EndIf),
@@ -569,23 +574,23 @@ mod tests {
             (Token::EndBlock, 310..312),
             (Token::Raw, 312..347),
             (Token::BeginBlock, 347..349),
-            (Token::Keyword(Keyword::EndFor), 350..356),
-            (Token::EndBlock, 357..359),
-            (Token::Raw, 359..365),
-            (Token::BeginExpression, 365..367),
-            (Token::Identifier, 368..372),
-            (Token::Pipe, 373..374),
-            (Token::Identifier, 375..382),
-            (Token::Number, 383..384),
-            (Token::Colon, 384..385),
-            (Token::String, 386..395),
-            (Token::Pipe, 396..397),
-            (Token::Identifier, 398..404),
-            (Token::String, 405..408),
-            (Token::Pipe, 409..410),
-            (Token::Identifier, 411..416),
-            (Token::EndExpression, 417..419),
-            (Token::Raw, 419..435),
+            (Token::Keyword(Keyword::EndIf), 350..355),
+            (Token::EndBlock, 356..358),
+            (Token::Raw, 358..364),
+            (Token::BeginExpression, 364..366),
+            (Token::Identifier, 367..371),
+            (Token::Pipe, 372..373),
+            (Token::Identifier, 374..381),
+            (Token::Number, 382..383),
+            (Token::Colon, 383..384),
+            (Token::String, 385..394),
+            (Token::Pipe, 395..396),
+            (Token::Identifier, 397..403),
+            (Token::String, 404..407),
+            (Token::Pipe, 408..409),
+            (Token::Identifier, 410..415),
+            (Token::EndExpression, 416..418),
+            (Token::Raw, 418..434),
         ];
 
         helper_lex_next_auto(&source, expect)

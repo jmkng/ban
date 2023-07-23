@@ -23,7 +23,7 @@ impl<'buffer> Pipe<'buffer> {
     /// be returned is propogated from the [write!] macro itself.
     pub fn write_value(&mut self, value: &Value) -> Result {
         match value {
-            Value::Null => self.write_null(),
+            Value::Null => Ok(()),
             Value::String(string) => self.write_str(string),
             Value::Array(array) => self.write_array(array),
             Value::Object(object) => self.write_object(object),
@@ -34,11 +34,6 @@ impl<'buffer> Pipe<'buffer> {
     /// Write the value to the buffer using the Display implementation.
     fn write_display(&mut self, value: impl Display) -> Result {
         write!(self.buffer, "{}", value)
-    }
-
-    /// Write the literal text "null" to the buffer.
-    fn write_null(&mut self) -> Result {
-        write!(self.buffer, "null")
     }
 
     /// Write the value to the buffer as a comma separated list and

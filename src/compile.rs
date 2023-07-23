@@ -31,6 +31,8 @@ pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
 /// Keywords recognized by the Lexer and Parser.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Keyword {
+    /// Enables negation.
+    Not,
     /// Beginning of an if expression.
     If,
     /// Marks the beginning of the else_branch in an if expression.
@@ -63,6 +65,7 @@ pub enum Keyword {
 impl Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Keyword::Not => write!(f, "not"),
             Keyword::If => write!(f, "if"),
             Keyword::Else => write!(f, "else"),
             Keyword::EndIf => write!(f, "endif"),
@@ -89,6 +92,10 @@ pub enum Operator {
     Multiply,
     /// /
     Divide,
+    /// >
+    Greater,
+    /// <
+    Lesser,
     /// ==
     Equal,
     /// !=
@@ -102,14 +109,16 @@ pub enum Operator {
 impl Display for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Operator::Add => write!(f, "add (+)"),
-            Operator::Subtract => write!(f, "subtract (-)"),
-            Operator::Multiply => write!(f, "multiply (*)"),
-            Operator::Divide => write!(f, "divide (/)"),
-            Operator::Equal => write!(f, "equal (==)"),
-            Operator::NotEqual => write!(f, "not equal (!=)"),
-            Operator::GreaterOrEqual => write!(f, "greater or equal (>=)"),
-            Operator::LesserOrEqual => write!(f, "lesser or equal (<=)"),
+            Operator::Add => write!(f, "+"),
+            Operator::Subtract => write!(f, "-"),
+            Operator::Multiply => write!(f, "*"),
+            Operator::Divide => write!(f, "/"),
+            Operator::Greater => write!(f, ">"),
+            Operator::Lesser => write!(f, "<"),
+            Operator::Equal => write!(f, "=="),
+            Operator::NotEqual => write!(f, "!="),
+            Operator::GreaterOrEqual => write!(f, ">="),
+            Operator::LesserOrEqual => write!(f, "<="),
         }
     }
 }

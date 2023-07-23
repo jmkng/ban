@@ -143,6 +143,50 @@
 //! ```
 //!
 //! See the [`filter`][`crate::filter`] module for more information.
+//!
+//! ## If
+//!
+//! If blocks allow conditional rendering based on a series of expressions.
+//!
+//! In this example, none of the "branches" are found to be "truthy", so
+//! nothing gets rendered. The last branch *would* be considered "truthy",
+//! but it is negated with the `not` keyword.
+//!
+//! ```html
+//! (* if false || 10 > 500 || not true *)
+//!     hello
+//! (* endif *)
+//! ```
+//!
+//! You can also provide a single identifier or literal, and it will pass if it
+//! is truthy.
+//!
+//! ```html
+//! (* if 100 *)
+//!     hello
+//! (* endif *)
+//! ```
+//!
+//! An if block is represented by a "tree", which may have one or more "branches",
+//! and each branch may have one or more "checks".
+//!
+//! The "||" and "&&" operators are used to divide branches and checks respectively,
+//! similar to how they are used in many programming languages.
+//!
+//! By using "&&", you are declaring that you intend to write another check and that
+//! it should be associated with the same branch, while "||" begins a new branch.
+//!
+//! ```html
+//!                                        |---| negated
+//! (* if this >= that && these == those || not is_admin *);
+//!       ------------    --------------    ------------
+//!          Check 1    +     Check 2          Check 1
+//!       ------------------------------    ------------
+//!                  Branch 1                  Branch 2
+//!       ----------------------------------------------
+//! ```
+//!
+//! If the block has at least one branch where all checks are truthy, it will pass.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
 #![warn(clippy::missing_docs)]

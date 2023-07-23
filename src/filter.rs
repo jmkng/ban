@@ -146,34 +146,16 @@ mod tests {
     fn test_call_chain() {
         let engine = get_test_engine();
         let result = engine.render(
-            &engine
-                .compile("(( name | to_lowercase | left 3 ))")
-                .unwrap(),
+            &engine.compile("(( name | to_lowercase ))").unwrap(),
             &Store::new().with_must("name", "TAYLOR"),
         );
 
-        assert_eq!(result.unwrap(), "tay");
-    }
-
-    #[test]
-    fn test_call_chain_error() {
-        let engine = get_test_engine();
-        let result = engine.render(
-            &engine
-                .compile("(( name | to_lowercase | left \"10\" ))")
-                .unwrap(),
-            &Store::new().with_must("name", "TAYLOR"),
-        );
-
-        // println!("{:#}", result.unwrap_err());
-        assert!(result.is_err());
+        assert_eq!(result.unwrap(), "taylor");
     }
 
     /// Return a new Engine equipped with test filters.
     fn get_test_engine() -> Engine<'static> {
-        Engine::default()
-            .with_filter_must("to_lowercase", to_lowercase)
-            .with_filter_must("left", left)
+        Engine::default().with_filter_must("to_lowercase", to_lowercase)
     }
 
     /// Lowercase the given value.
@@ -185,49 +167,6 @@ mod tests {
         match value {
             Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
             _ => Err(Error::build("filter `to_lowercase` requires string input")),
-        }
-    }
-
-    /// Return the first n characters of the input Value from the left,
-    /// where n is the value of the argument.
-    ///
-    /// Similar to TSQL `LEFT`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the input is not a string, more than one
-    /// argument is provided, or the argument is not a number.
-    fn left(value: &Value, args: &HashMap<String, Value>) -> Result<Value, Error> {
-        let arg_len = args.len();
-        if arg_len != 1 {
-            return Err(Error::build(format!(
-                "filter `left` expects `1` argument, received `{arg_len}`"
-            )));
-        }
-
-        match value {
-            Value::String(string) => {
-                let n = args.values().next().unwrap();
-
-                match n {
-                    Value::Number(number) => match number.as_u64() {
-                        Some(u64) => {
-                            let n_left = string.chars().take(u64 as usize).collect::<String>();
-                            Ok(json!(n_left))
-                        }
-                        None => Err(Error::build(format!(
-                            "filter `left` expects an integer (not a float) that fits in u64, \
-                            `{}` is invalid",
-                            number
-                        ))),
-                    },
-                    unexpected => Err(Error::build(format!(
-                        "filter `left` expects a number argument, received `{}`",
-                        unexpected,
-                    ))),
-                }
-            }
-            _ => Err(Error::build("filter `left` expects string input")),
         }
     }
 }

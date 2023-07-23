@@ -1,35 +1,35 @@
+use super::tree::CheckTree;
 use crate::{
-    compile::tree::{Expression, LoopVariables},
+    compile::tree::{Expression, Variables},
     region::Region,
 };
 
-/// Describes the state of the parser and provides temporary storage for
-/// fragments of larger expressions.
-pub enum State {
-    /// The parser is working on an "If" expression.
+/// Describes the internal state of a `Parser`.
+pub enum BlockState {
+    /// The `Parser` is working on an "if" block.
     If {
-        /// True if this is an "else if" expression.
+        /// True if this "if" is an "else if".
         else_if: bool,
-        /// Condition of the "If" tag.
-        condition: Expression,
-        /// Region from the containing "If" tag.
+        /// [`Compare`] derived from this "if" block.
+        tree: CheckTree,
+        /// Region spanning the full "if" block.
         region: Region,
-        /// True if this "if" has an "else" expression.
+        /// True if this "if" has an associated "else".
         has_else: bool,
     },
-    /// The parser is working on a "For" expression.
+    /// The `Parser` is working on a "for" block.
     For {
         /// Variables of the loop.
-        variables: LoopVariables,
+        variables: Variables,
         /// Value being iterated on.
         iterable: Expression,
-        /// Region from the containing "For" tag.
+        /// Region spanning the full "for" tag.
         region: Region,
     },
 }
 
-/// Describes the build state of a `Compare`.
-pub enum CompareState {
+/// Describes the internal state of a `CheckTree`.
+pub enum CheckState {
     /// Expect a `Base`,
     ///
     /// The boolean will be true when the left (first)
@@ -58,8 +58,8 @@ pub enum CompareState {
     Transition,
 }
 
-impl Default for CompareState {
+impl Default for CheckState {
     fn default() -> Self {
-        CompareState::Base(false)
+        CheckState::Base(false)
     }
 }
