@@ -11,7 +11,7 @@ pub use crate::compile::{
 use crate::log::Error;
 use std::fmt::Display;
 
-/// Compile a `Template` from the given text.
+/// Compile a [`Template`] from the given text.
 ///
 /// Provides a shortcut to quickly compile a `Template` without creating
 /// an `Engine`.

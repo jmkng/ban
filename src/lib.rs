@@ -188,6 +188,42 @@
 //! ```
 //!
 //! If the block has at least one branch where all checks are truthy, it will pass.
+//!
+//! ## For
+//!
+//! For blocks allow you to iterate over data.
+//!
+//! ```html
+//! (* for item in inventory *)
+//!     (( item ))
+//! (* endfor *)
+//! ```
+//!
+//! You can iterate over arrays, objects and strings.
+//!
+//! Providing a single identifier before the "in" keyword will scope the value to the
+//! identifier, but you can also provide two identifiers separated by a comma:
+//!
+//! ```html
+//! (* for i, item in inventory *)
+//!     (( i )) - (( item ))
+//! (* endfor *)
+//! ```
+//!
+//! The value of the two identifiers will vary based on the type you are iterating on.
+//! Considering the above example, these rules apply:
+//!
+//! When "inventory" is..
+//!
+//! 1. Object:
+//!     - i: key
+//!     - item: value
+//! 2. Array:
+//!     - i: index
+//!     - item: value
+//! 3. String:
+//!     - i: index
+//!     - item: char
 #![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
 #![warn(clippy::missing_docs)]
@@ -212,7 +248,7 @@ pub use syntax::Builder;
 
 use syntax::Marker;
 
-/// Create a new instance of `Engine` using the default `Syntax`.
+/// Create a new instance of [`Engine`] using the default `Syntax`.
 ///
 /// Equivalent to [`default`][`crate::Engine::default()`]
 ///
