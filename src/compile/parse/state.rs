@@ -1,6 +1,6 @@
 use super::tree::CheckTree;
 use crate::{
-    compile::tree::{Expression, Variables},
+    compile::tree::{Base, Set},
     region::Region,
 };
 
@@ -19,10 +19,10 @@ pub enum BlockState {
     },
     /// The `Parser` is working on a "for" block.
     For {
-        /// Variables of the loop.
-        variables: Variables,
+        /// Set of the loop.
+        set: Set,
         /// Value being iterated on.
-        iterable: Expression,
+        base: Base,
         /// Region spanning the full "for" tag.
         region: Region,
     },

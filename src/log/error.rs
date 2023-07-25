@@ -1,8 +1,6 @@
-use std::fmt::{Debug, Display, Formatter, Result};
-
-use crate::{log::Visual, region::Region};
-
 use super::{Pointer, RED, RESET};
+use crate::{log::Visual, region::Region};
+use std::fmt::{Debug, Display, Formatter, Result};
 
 pub const UNEXPECTED_TOKEN: &str = "unexpected token";
 pub const UNEXPECTED_BLOCK: &str = "unexpected block";
@@ -30,7 +28,7 @@ pub const INVALID_FILTER: &str = "invalid filter";
 /// let error = Error::build("unexpected keyword")
 ///     .pointer(source, region)
 ///     .template("template.txt")
-///     .help("expected one of \"if\", \"let\", \"for\"");
+///     .help(r#"expected one of "if", "let", "for""#);
 /// ```
 ///
 /// When printed with `println!("{:#}", error)` the [`Error`] produces this output:
@@ -161,7 +159,6 @@ impl Debug for Error {
         if !f.alternate() {
             writeln!(f, "{self:#}")?;
         }
-
         f.debug_struct("Error")
             .field("reason", &self.reason)
             .field("template", &self.template)

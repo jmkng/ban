@@ -131,6 +131,7 @@ impl<'source> Lexer<'source> {
                     '/' => advance(1, Token::Operator(Operator::Divide)),
                     '-' => advance(1, Token::Operator(Operator::Subtract)),
                     '.' => advance(1, Token::Period),
+                    ',' => advance(1, Token::Comma),
                     ':' => advance(1, Token::Colon),
                     c if c.is_whitespace() => Ok(Some(self.lex_whitespace(iterator, index))),
                     c if c.is_ascii_digit() => Ok(Some(self.lex_digit(iterator, index))),
@@ -335,7 +336,7 @@ impl<'source> Lexer<'source> {
             if self.left_trim {
                 self.left_trim = false;
                 let s = &self.source[region_begin..region_end];
-                region_begin = s.len() - s.trim_start().len()
+                region_begin = region_begin + s.len() - s.trim_start().len()
             }
 
             // The only Token kind that should ever be trimmed is Token::Raw,

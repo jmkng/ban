@@ -13,10 +13,10 @@ pub enum Tree {
     Output(Output),
     /// Render another template.
     Include(Include),
-    /// An if or else if expression.
+    /// An if or else if block.
     If(If),
     /// A for loop.
-    For(For),
+    For(Iterable),
 }
 
 /// Represents data within expression tags, "(( ))" by default, and may be a Base
@@ -33,7 +33,7 @@ pub enum Expression {
 }
 
 impl Expression {
-    /// Get the Region from the underlying Expression kind.
+    /// Get the Region from the underlying [`Expression`] kind.
     pub fn get_region(&self) -> Region {
         match self {
             Expression::Base(base) => base.get_region(),
@@ -279,7 +279,7 @@ impl Literal {
 
 /// Call to some registered function.
 ///
-/// Refer to an underlying Expression from which the input data
+/// Refer to an underlying [`Expression`] from which the input data
 /// may be derived.
 #[derive(Debug, Clone)]
 pub struct Call {
@@ -312,7 +312,7 @@ pub struct Include {
     pub globals: Option<Expression>,
 }
 
-/// Conditional rendering expression.
+/// Conditional rendering block.
 #[derive(Debug, Clone)]
 pub struct If {
     /// TODO
@@ -325,28 +325,30 @@ pub struct If {
     pub region: Region,
 }
 
-/// Loop rendering expression.
+/// Loop rendering block.
 #[derive(Debug, Clone)]
-pub struct For {
+pub struct Iterable {
     /// TODO
-    pub not: bool,
+    pub set: Set,
     /// TODO
-    pub condition: Expression,
+    pub base: Base,
     /// TODO
-    pub then_branch: Scope,
+    pub data: Scope,
     /// TODO
-    pub else_branch: Option<Scope>,
+    pub region: Region,
 }
 
 /// Variable types derived from a loop.
-pub enum Variables {
+#[derive(Debug, Clone)]
+pub enum Set {
     /// TODO
-    Item(Identifier),
+    Single(Identifier),
     /// TODO
-    KeyValue(KeyValue),
+    Pair(KeyValue),
 }
 
 /// Key/value pair.
+#[derive(Debug, Clone)]
 pub struct KeyValue {
     /// TODO
     pub key: Identifier,

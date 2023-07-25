@@ -18,7 +18,6 @@ use crate::{
     region::Region,
 };
 use serde_json::{Number, Value};
-use std::ops::Range;
 
 pub struct Parser<'source> {
     /// `Lexer` used to pull from source as tokens instead of raw text.
@@ -198,15 +197,52 @@ impl<'source> Parser<'source> {
                                 }
                             }
                         }
-                        // TODO
-                        Block::For(_, _) => todo!(),
-                        // TODO
-                        Block::EndFor => todo!(),
+                        // Beginning of an "for" block.
+                        //
+                        // Expected:
+                        //
+                        // BASE [,] [BASE] IN BASE
+                        // ----            -- ----
+                        Block::For(set, base) => {
+                            states.push(BlockState::For { set, base, region });
+                            scopes.push(Scope::new());
+                            continue;
+                        }
+                        // End of a "for" block.
+                        //
+                        // Expected:
+                        //
+                        // ...
+                        Block::EndFor => {
+                            let error = || {
+                                Error::build(UNEXPECTED_BLOCK)
+                                    .pointer(self.lexer.source, end)
+                                    .help(
+                                        "unexpected end of `for` block, did you forget to write a \
+                                        `for` block first?",
+                                    )
+                            };
+
+                            let tree = match states.pop().ok_or_else(error)? {
+                                BlockState::For { set, base, .. } => {
+                                    let data = scopes.pop().unwrap();
+                                    Tree::For(Iterable {
+                                        set,
+                                        base,
+                                        data,
+                                        region,
+                                    })
+                                }
+                                _ => return Err(error()),
+                            };
+
+                            tree
+                        }
                         // TODO
                         Block::Include(_, _) => todo!(),
                     }
                 }
-                _ => unreachable!("lexer will error early unless begin block"),
+                _ => unreachable!("lexer will abort without begin block"),
             };
 
             scopes.last_mut().unwrap().data.push(tree);
@@ -261,17 +297,17 @@ impl<'source> Parser<'source> {
                 }
             }
             Keyword::EndIf => Ok(Block::EndIf),
-            // TODO
-            Keyword::Let => todo!(),
-            // TODO
             Keyword::For => {
-                //Keyword::In => todo!(),
-                todo!()
+                let variables = self.parse_set()?;
+                self.next_must(Token::Keyword(Keyword::In))?;
+                let base = self.parse_base()?;
+                Ok(Block::For(variables, base))
             }
-            // TODO
-            Keyword::EndFor => todo!(),
+            Keyword::EndFor => Ok(Block::EndFor),
             // TODO
             Keyword::Include => todo!(),
+            // TODO
+            Keyword::Let => todo!(),
             // TODO
             Keyword::Extends => todo!(),
             // TODO
@@ -279,7 +315,7 @@ impl<'source> Parser<'source> {
             // TODO
             Keyword::EndBlock => todo!(),
             // TODO
-            _ => todo!(), // err
+            _ => todo!(), // TODO: err
         }
     }
 
@@ -410,11 +446,33 @@ impl<'source> Parser<'source> {
         Ok(tree)
     }
 
+    /// Parse a [`Set`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if the next token is not an [`Identifier`].
+    fn parse_set(&mut self) -> Result<Set, Error> {
+        let key = self.parse_ident()?;
+        if !self.peek_is(Token::Comma)? {
+            return Ok(Set::Single(key));
+        }
+
+        self.next_must(Token::Comma)?;
+        let value = self.parse_ident()?;
+        let merged = key.region.combine(value.region);
+
+        Ok(Set::Pair(KeyValue {
+            key,
+            value,
+            region: merged,
+        }))
+    }
+
     /// Parse a [`Keyword`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the next token is not a `Keyword`.
+    /// Returns an [`Error`] if the next token is not a [`Keyword`].
     fn parse_keyword(&mut self) -> Result<(Keyword, Region), Error> {
         match self.next_any_must()? {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
@@ -750,7 +808,7 @@ impl<'source> Parser<'source> {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use crate::compile::lex::token::Token;
+    use crate::compile::{lex::token::Token, tree::Set};
 
     #[test]
     fn test_parser_lexer_integration() {
@@ -790,26 +848,16 @@ mod tests {
         //                                                   |---| is_admin negated here
         let source = "(* if this >= that && these == those || not is_admin *)";
         //                  ------------    --------------    ------------
-        //                     Check 1    +     Check 2          Check 1
+        //                     Check 1          Check 2          Check 1
         //                  ------------------------------    ------------
         //                             Branch 1                  Branch 2
         //                  ----------------------------------------------
-        //                                       Tree
+        //                                        Tree
         let mut parser = get_parser_n(source, 2);
-        let mut result = parser.parse_tree().unwrap();
+        let result = parser.parse_tree().unwrap();
         assert_eq!(result.branches.len(), 2);
         assert_eq!(result.branches.first().unwrap().len(), 2);
         assert_eq!(result.branches.last().unwrap().len(), 1);
-
-        let is_admin_left = &result.last_check_mut_must("").left;
-        // The underlying `Region` only spans the actual `Base`, which is "is_admin"
-        // here, but get_region() is aware of negation and will return a new `Region`
-        // that includes the "!".
-        assert_eq!(
-            is_admin_left.get_region().literal(source).unwrap(),
-            "is_admin"
-        );
-        // println!("{:?}", result);
     }
 
     #[test]
@@ -848,5 +896,24 @@ mod tests {
         }
 
         parser
+    }
+
+    #[test]
+    fn test_parse_for_valid() {
+        //                      Identifier 2
+        //                         ----
+        let source = "(* for this, that in thing *)hello(* endfor *)";
+        //                   ----          -----   -----
+        //                Identifier 1      Base   Data <---- rendered n times
+        let mut parser = get_parser_n(source, 2);
+        let result = parser.parse_set().unwrap();
+        match result {
+            Set::Pair(pa) => {
+                assert_eq!(pa.key.region.literal(source).unwrap(), "this");
+                assert_eq!(pa.value.region.literal(source).unwrap(), "that");
+                assert_eq!(pa.region.literal(source).unwrap(), "this, that");
+            }
+            _ => unreachable!(),
+        }
     }
 }

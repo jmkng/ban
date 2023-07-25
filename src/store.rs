@@ -4,12 +4,13 @@ use serde_json::{to_value, Value};
 use std::{collections::HashMap, fmt::Display};
 
 /// Provides storage for data that a `Template` can be rendered with.
+#[derive(Debug)]
 pub struct Store {
     data: HashMap<String, Value>,
 }
 
 impl Store {
-    /// Create a new Store.
+    /// Create a new [`Store`].
     ///
     /// # Examples
     ///
@@ -25,7 +26,7 @@ impl Store {
         }
     }
 
-    /// Insert the value into the Store.
+    /// Insert the [`Value`] into the [`Store`].
     ///
     /// # Errors
     ///
@@ -58,7 +59,7 @@ impl Store {
         }
     }
 
-    /// Insert the value into the Store.
+    /// Insert the [`Value`] into the [`Store`].
     ///
     /// # Panics
     ///
@@ -81,9 +82,9 @@ impl Store {
         self.data.insert(key.into(), to_value(value).unwrap());
     }
 
-    /// Insert the value into the Store.
+    /// Insert the [`Value`] into the [`Store`].
     ///
-    /// Returns the Store, so additional methods may be chained.
+    /// Returns the `Store`, so additional methods may be chained.
     ///
     /// # Errors
     ///
@@ -107,9 +108,9 @@ impl Store {
         Ok(self)
     }
 
-    /// Insert the value into the Store.
+    /// Insert the [`Value`] into the [`Store`].
     ///
-    /// Returns the Store, so additional methods may be chained.
+    /// Returns the `Store`, so additional methods may be chained.
     ///
     /// # Panics
     ///
@@ -132,7 +133,7 @@ impl Store {
         self
     }
 
-    /// Get the value of the given key, if any.
+    /// Get the [`Value`] of the given key.
     ///
     /// # Examples
     ///
@@ -147,6 +148,65 @@ impl Store {
     #[inline]
     pub fn get(&self, index: &str) -> Option<&Value> {
         self.data.get(index)
+    }
+}
+
+// Wrapper for [`Store`] that provides a stack structure to store
+// shadowed data.
+#[derive(Debug)]
+pub(crate) struct Shadow<'store> {
+    store: &'store Store,
+    data: Vec<HashMap<String, Value>>,
+}
+
+impl<'store> Shadow<'store> {
+    /// Create a new [`Shadow`] over the given [`Store`].
+    pub(crate) fn new(store: &'store Store) -> Self {
+        Self {
+            store,
+            data: vec![],
+        }
+    }
+
+    /// Push a new frame onto the [`Shadow`] stack.
+    pub(crate) fn push(&mut self) {
+        self.data.push(HashMap::new());
+    }
+
+    /// Remove the top frame from the [`Shadow`] stack.
+    pub(crate) fn pop(&mut self) {
+        self.data.pop();
+    }
+
+    /// Insert the value into the top level stack of the [`Shadow`]
+    ///
+    /// # Panics
+    ///
+    /// Panics if no frames exist within the [`Shadow`].
+    #[inline]
+    pub(crate) fn insert_must<S, T>(&mut self, key: S, value: T)
+    where
+        S: Into<String>,
+        T: Serialize + Display,
+    {
+        self.data
+            .last_mut()
+            .expect("stack must not be empty when shadowing value")
+            .insert(key.into(), to_value(value).unwrap());
+    }
+
+    /// Get the [`Value`] of the given key.
+    ///
+    /// If the key is not found within the [`Shadow`], the store will be
+    /// searched.
+    #[inline]
+    pub(crate) fn get(&self, index: &str) -> Option<&Value> {
+        for stack in self.data.iter().rev() {
+            if let Some(value) = stack.get(index) {
+                return Some(value);
+            }
+        }
+        self.store.get(index)
     }
 }
 

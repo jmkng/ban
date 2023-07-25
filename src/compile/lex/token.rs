@@ -29,6 +29,8 @@ pub enum Token {
     EndBlock,
     /// .
     Period,
+    ///
+    Comma,
     /// ||
     Or,
     /// &&
@@ -82,15 +84,16 @@ impl Display for Token {
             Token::EndExpression => write!(f, "end expression"),
             Token::BeginBlock => write!(f, "begin block"),
             Token::EndBlock => write!(f, "end block"),
-            Token::Period => write!(f, "period (.)"),
-            Token::Assign => write!(f, "assign (=)"),
-            Token::Keyword(keyword) => write!(f, "keyword {keyword}"),
-            Token::Operator(operator) => write!(f, "operator {operator}"),
-            Token::Pipe => write!(f, "pipe (|)"),
-            Token::Exclamation => write!(f, "exclamation (!)"),
-            Token::Colon => write!(f, "colon (:)"),
-            Token::Or => write!(f, "or (||)"),
-            Token::And => write!(f, "and (&&)"),
+            Token::Period => write!(f, "."),
+            Token::Comma => write!(f, ","),
+            Token::Assign => write!(f, "="),
+            Token::Keyword(keyword) => write!(f, "{keyword}"),
+            Token::Operator(operator) => write!(f, "{operator}"),
+            Token::Pipe => write!(f, "|"),
+            Token::Exclamation => write!(f, "!"),
+            Token::Colon => write!(f, ":"),
+            Token::Or => write!(f, "||"),
+            Token::And => write!(f, "&&"),
             Token::True => write!(f, "true"),
             Token::False => write!(f, "false"),
         }

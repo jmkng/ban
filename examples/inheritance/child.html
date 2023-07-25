@@ -4,7 +4,7 @@ Example template that illustrates how an inheritance system might work.
 This is the child template, so the blocks here would be collected and carried
 to the parent, in a loop, until the base template is found and executed.
 -->
-(* extends parent.html *)
+(* extend parent.html *)
 
 <!-- 
 Just one block.
@@ -29,7 +29,7 @@ data.
 
     (* if name == "taylor" *)
         Welcome back, Taylor.
-    (* endfor *)
+    (* endif *)
 
     (( name | prepend 1: "hello, " | append "!" | upper ))
 (* endblock *)

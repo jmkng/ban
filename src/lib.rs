@@ -180,10 +180,11 @@
 //!                                        |---| negated
 //! (* if this >= that && these == those || not is_admin *);
 //!       ------------    --------------    ------------
-//!          Check 1    +     Check 2          Check 1
+//!          Check 1         Check 2           Check 1
 //!       ------------------------------    ------------
 //!                  Branch 1                  Branch 2
 //!       ----------------------------------------------
+//!                            Tree
 //! ```
 //!
 //! If the block has at least one branch where all checks are truthy, it will pass.

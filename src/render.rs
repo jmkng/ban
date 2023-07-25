@@ -2,16 +2,22 @@ mod compare;
 
 use crate::{
     compile::{
-        tree::{Arguments, Base, Call, CheckBranch, Expression, Key, Output, Tree},
+        tree::{Arguments, Base, Call, CheckBranch, Expression, Iterable, Key, Output, Set, Tree},
         Scope, Template,
     },
-    log::{error_write, Error, INVALID_FILTER},
+    log::{error_write, Error, INCOMPATIBLE_TYPES, INVALID_FILTER},
     pipe::Pipe,
     region::Region,
+    store::Shadow,
     Engine, Store,
 };
+use serde::Serialize;
 use serde_json::Value;
-use std::{borrow::Cow, collections::HashMap, fmt::Write};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::{Display, Write},
+};
 
 use self::compare::{compare_values, is_truthy};
 
@@ -39,13 +45,13 @@ pub fn render<'source>(template: &'source Template, store: &Store) -> Result<Str
 }
 
 pub struct Renderer<'source, 'store> {
-    /// An engine containing any registered filters.
+    /// An [`Engine`] containing any registered filters.
     engine: &'source Engine<'source>,
-    /// The template being rendered.
+    /// The [`Template`] being rendered.
     template: &'source Template<'source>,
-    /// The Store that the Template is rendered with.
-    store: &'store Store,
-    /// Storage for Block tags.
+    /// Contains the [`Store`] and any shadowed data.
+    shadow: Shadow<'store>,
+    /// Storage for `Block` tags.
     blocks: Vec<(String, Scope)>,
 }
 
@@ -59,7 +65,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
         Renderer {
             engine,
             template,
-            store,
+            shadow: Shadow::new(store),
             blocks: vec![],
         }
     }
@@ -78,23 +84,25 @@ impl<'source, 'store> Renderer<'source, 'store> {
         Ok(buffer)
     }
 
-    /// Render the given [`Scope`].
+    /// Render a [`Scope`].
     ///
     /// # Errors
     ///
     /// Returns an [`Error`] if any of the [`Tree`] instances in the `Scope` cannot be rendered.
-    fn render_scope(&self, scope: &Scope, pipe: &mut Pipe) -> Result<(), Error> {
+    fn render_scope(&mut self, scope: &Scope, pipe: &mut Pipe) -> Result<(), Error> {
         let mut tree = scope.data.iter();
         'render: while let Some(next) = tree.next() {
+            self.shadow.push();
+
             match next {
-                Tree::Raw(r) => {
-                    let value = self.evaluate_raw(r)?;
+                Tree::Raw(ra) => {
+                    let value = self.evaluate_raw(ra)?;
                     pipe.write_str(value).map_err(|_| error_write())?
-                },
-                Tree::Output(o) => {
-                    let value = self.evaluate_output(o)?;
+                }
+                Tree::Output(ou) => {
+                    let value = self.evaluate_output(ou)?;
                     pipe.write_value(&value).map_err(|_| error_write())?
-                },
+                }
                 Tree::If(i) => {
                     for branch in i.tree.branches.iter() {
                         if !self.evaluate_branch(branch)? {
@@ -105,13 +113,85 @@ impl<'source, 'store> Renderer<'source, 'store> {
                         }
                     }
                     self.render_scope(&i.then_branch, pipe)?;
-                },
-                _ => todo!()
-                // Tree::Include(_) => todo!(),
-                // Tree::ForLoop(_) => todo!(),
+                }
+                Tree::For(fo) => {
+                    self.render_for(fo, pipe)?;
+                }
+                Tree::Include(_) => todo!(),
+            }
+
+            self.shadow.pop();
+        }
+        Ok(())
+    }
+
+    /// Render a [`For`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when accessing the literal value of a [`Region`] fails,
+    /// rendering a [`Tree`] within the [`Scope`] instances contained by the body of
+    /// the `For` fails, or the [`Base`] within the given [`Iterable`] is not found in
+    /// the [`Store`].
+    fn render_for(&mut self, iterable: &Iterable, pipe: &mut Pipe) -> Result<(), Error> {
+        let value = self.evaluate_base(&iterable.base)?;
+        match value.as_ref() {
+            Value::String(st) => {
+                for (index, char) in st.to_owned().char_indices() {
+                    self.shadow((Some(index), char), &iterable.set)?;
+                    self.render_scope(&iterable.data, pipe)?;
+                }
+            }
+            Value::Array(ar) => {
+                for (index, value) in ar.to_owned().iter().enumerate() {
+                    self.shadow((Some(index), value), &iterable.set)?;
+                    self.render_scope(&iterable.data, pipe)?;
+                }
+            }
+            Value::Object(ob) => {
+                for (key, value) in ob.to_owned().iter() {
+                    self.shadow((Some(key), value), &iterable.set)?;
+                    self.render_scope(&iterable.data, pipe)?;
+                }
+            }
+            incompatible => {
+                return Err(Error::build(INCOMPATIBLE_TYPES).help(format!(
+                    "iterating on value `{}` is not supported",
+                    incompatible
+                )))
             }
         }
+        Ok(())
+    }
 
+    /// Shadow the given [`Set`] with the provided data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when accessing the literal value of a [`Region`] fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a `Set` of type `Pair` is received, but the .0 property in the
+    /// "pair" parameter is None.
+    fn shadow<N, T>(&mut self, pair: (Option<N>, T), set: &Set) -> Result<(), Error>
+    where
+        N: Serialize + Display,
+        T: Serialize + Display,
+    {
+        let source = self.template.source;
+        match set {
+            Set::Single(si) => {
+                let key = si.region.literal(source)?;
+                self.shadow.insert_must(key, pair.1)
+            }
+            Set::Pair(pa) => {
+                let key = pa.key.region.literal(source)?;
+                let value = pa.value.region.literal(source)?;
+                self.shadow.insert_must(key, pair.0.unwrap());
+                self.shadow.insert_must(value, pair.1);
+            }
+        }
         Ok(())
     }
 
@@ -125,6 +205,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     fn evaluate_branch(&self, branch: &CheckBranch) -> Result<bool, Error> {
         for check in branch {
             let left = self.evaluate_base(&check.left)?;
+
             match &check.right {
                 Some(base) => {
                     let right = self.evaluate_base(&base)?;
@@ -145,11 +226,11 @@ impl<'source, 'store> Renderer<'source, 'store> {
                     }
                 }
                 None => {
-                    let result = if check.negate {
-                        !is_truthy(&left)
-                    } else {
-                        is_truthy(&left)
+                    let result = match check.negate {
+                        true => !is_truthy(&left),
+                        false => is_truthy(&left),
                     };
+
                     if !result {
                         return Ok(false);
                     }
@@ -176,7 +257,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an error if rendering the `Base` fails, which may happen when
+    /// Returns an error if evaluating the `Base` fails, which may happen when
     /// accessing the literal value of a [`Region`] fails.
     fn evaluate_base(&self, base: &'source Base) -> Result<Cow<Value>, Error> {
         match base {
@@ -197,10 +278,8 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] in these cases:
-    ///
-    /// - Rendering the `Base` of the `Call` chain fails.
-    /// - Executing a [`Filter`] returns an `Error`.
+    /// Returns an [`Error`] when rendering the `Base` of the `Call` chain fails,
+    /// or executing a [`Filter`] returns an [`Error`] itself.
     fn evaluate_call(&self, call: &'store Call) -> Result<Cow<Value>, Error> {
         let mut call_stack = vec![call];
         let mut begin: &Expression = &call.receiver;
@@ -267,14 +346,19 @@ impl<'source, 'store> Renderer<'source, 'store> {
             .first()
             .expect("key vector should always have at least one key")
             .get_region();
+
         let first_value = first_region.literal(self.template.source)?;
-        let store_value = self.store.get(first_value);
+        let store_value = self.shadow.get(first_value);
+
         let mut value: Cow<Value> = if store_value.is_some() {
             Cow::Borrowed(store_value.unwrap())
         } else {
-            // TODO Maybe error here instead of returning a null value,
-            // but it should probably be configurable.
-            Cow::Owned(Value::Null)
+            return Err(Error::build("missing store value")
+                .pointer(self.template.source, first_region)
+                .help(format!(
+                    "unable to find `{first_value}` in store, \
+                    ensure it exists or try wrapping with an `if` block",
+                )));
         };
 
         for key in keys.iter().skip(1) {
@@ -332,6 +416,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
 mod tests {
     use super::Renderer;
     use crate::{compile::Parser, Engine, Store};
+    use serde_json::json;
 
     #[test]
     fn test_render_raw() {
@@ -357,16 +442,36 @@ mod tests {
         assert_eq!(result.unwrap(), "hello there, taylor!");
     }
 
+    // TODO: Refactor tests
+
+    #[test]
+    fn test_render_output_whitespace() {
+        let result = Renderer::new(
+            &Engine::default(),
+            &Parser::new("hello there, ((- name -)) !")
+                .compile()
+                .unwrap(),
+            &Store::new().with_must("name", "taylor"),
+        )
+        .render();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello there,taylor!");
+    }
+
     #[test]
     fn test_render_if() {
         let result = Renderer::new(
             &Engine::default(),
             &Parser::new(
-                "(* if left > 300 *)a\
-                (* else if name == \"taylor\" *)b\
-                (* else if not false *)c\
-                (* else *)d\
-                (* endif *)",
+                "(* if left > 300 *)\
+                    a\
+                 (* else if name == \"taylor\" *)\
+                    b\
+                 (* else if not false *)\
+                    c\
+                 (* else *)\
+                    d\
+                 (* endif *)",
             )
             .compile()
             .unwrap(),
@@ -374,5 +479,83 @@ mod tests {
         )
         .render();
         assert_eq!(result.unwrap(), "c");
+    }
+
+    #[test]
+    fn test_render_for() {
+        let result = Renderer::new(
+            &Engine::default(),
+            &Parser::new(
+                "(* for value in first *)\
+                    first loop: (( value )) \
+                    (* for value in second *)\
+                        second loop: (( value )) \
+                    (* endfor *)\
+                (* endfor *)",
+            )
+            .compile()
+            .unwrap(),
+            &Store::new()
+                .with_must("first", "ab")
+                .with_must("second", "cd"),
+        )
+        .render();
+
+        assert_eq!(
+            result.unwrap(),
+            "first loop: a second loop: c second loop: d \
+            first loop: b second loop: c second loop: d "
+        );
+    }
+
+    #[test]
+    fn test_render_for_array() {
+        let result = Renderer::new(
+            &Engine::default(),
+            &Parser::new(
+                "(* for index, value in data *)\
+                    (( index )) - (( value )) \
+                (* endfor *)",
+            )
+            .compile()
+            .unwrap(),
+            &Store::new().with_must("data", json!(["one", "two"])),
+        )
+        .render();
+        assert_eq!(result.unwrap(), "0 - one 1 - two ");
+    }
+
+    #[test]
+    fn test_render_for_object_pair() {
+        let result = Renderer::new(
+            &Engine::default(),
+            &Parser::new(
+                "(* for key, value in data *)\
+                    (( key )) - (( value ))\
+                (* endfor *)",
+            )
+            .compile()
+            .unwrap(),
+            &Store::new().with_must("data", json!({"one": "two"})),
+        )
+        .render();
+        assert_eq!(result.unwrap(), "one - two");
+    }
+
+    #[test]
+    fn test_render_for_object_single() {
+        let result = Renderer::new(
+            &Engine::default(),
+            &Parser::new(
+                "(* for value in data *)\
+                    (( value ))\
+                (* endfor *)",
+            )
+            .compile()
+            .unwrap(),
+            &Store::new().with_must("data", json!({"one": "two"})),
+        )
+        .render();
+        assert_eq!(result.unwrap(), "two");
     }
 }

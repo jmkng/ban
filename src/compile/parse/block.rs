@@ -1,6 +1,6 @@
+use super::tree::Base;
+use crate::compile::tree::{CheckTree, Set};
 use std::fmt::Display;
-
-use crate::compile::tree::{CheckTree, Expression, Variables};
 
 /// Represents a fragment of a parsed block.
 pub enum Block {
@@ -13,11 +13,11 @@ pub enum Block {
     /// The (* endif *) part of an "if" Block.
     EndIf,
     /// The (* for n in t *) part of a "for" Block.
-    For(Variables, Expression),
+    For(Set, Base),
     /// The "(* endfor *)" part of a "for" Block.
     EndFor,
     /// TODO
-    Include(String, Option<Expression>),
+    Include(String, Option<Base>),
 }
 
 impl Display for Block {
