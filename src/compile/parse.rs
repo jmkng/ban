@@ -42,7 +42,7 @@ impl<'source> Parser<'source> {
     ///
     /// Returns a new `Template`, which can be executed with some [`Store`][`crate::Store`]
     /// data to receive output.
-    pub fn compile(mut self) -> Result<Template<'source>, Error> {
+    pub fn compile(mut self, name: Option<&'source str>) -> Result<Template<'source>, Error> {
         // Temporary storage for fragments of larger blocks.
         let mut states: Vec<BlockState> = vec![];
         // Storage for a stack of [`Scope`] instances.
@@ -263,6 +263,7 @@ impl<'source> Parser<'source> {
 
         assert!(scopes.len() == 1, "must have single scope");
         Ok(Template {
+            name,
             scope: scopes.remove(0),
             source: self.lexer.source,
         })
@@ -820,7 +821,7 @@ mod tests {
     #[test]
     fn test_parse_full_expression() {
         let source = "hello (( name | prepend 1: \"hello, \" | append \"!\" | upper ))";
-        let result = Parser::new(source).compile();
+        let result = Parser::new(source).compile(None);
         assert!(result.is_ok());
         // println!("{:#?}", result.unwrap().scope.tokens);
         // println!("{}", text.get(6..60).unwrap())
@@ -829,7 +830,7 @@ mod tests {
     #[test]
     fn test_parse_negative_num_err() {
         let source = "balance: (( - 1000 ))";
-        let result = Parser::new(source).compile();
+        let result = Parser::new(source).compile(None);
         assert!(result.is_err(),);
     }
 

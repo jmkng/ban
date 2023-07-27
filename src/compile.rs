@@ -25,7 +25,7 @@ use std::fmt::Display;
 /// assert!(template.is_ok())
 /// ```
 pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
-    Parser::new(text).compile()
+    Parser::new(text).compile(None)
 }
 
 /// Keywords recognized by the Lexer and Parser.

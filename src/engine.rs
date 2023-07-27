@@ -46,7 +46,7 @@ impl<'source> Engine<'source> {
     /// ```
     #[inline]
     pub fn compile(&self, text: &'source str) -> Result<Template<'source>, Error> {
-        Parser::new(text).compile()
+        Parser::new(text).compile(None)
     }
 
     /// Compile a new [`Template`].
@@ -91,6 +91,101 @@ impl<'source> Engine<'source> {
     #[inline]
     pub fn render(&self, template: &'source Template, store: &Store) -> Result<String, Error> {
         Renderer::new(self, template, store).render()
+    }
+
+    ///
+    pub fn render_named(&self, name: &str, store: &Store) -> Result<String, Error> {
+        let template = self.get_template(name);
+        if template.is_none() {
+            return Err(Error::build(format!(
+                "template with name `{name}` not found in engine, \
+                add it with `.add_template"
+            )));
+        }
+        self.render(template.unwrap(), store)
+    }
+
+    /// Compile and store a new [`Template`] with the given name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when a `Template` with the given name already exists,
+    /// or when compilation fails, which most likely means the source contains invalid
+    /// syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Engine;
+    ///
+    /// let mut engine = Engine::default();
+    /// let result = engine.add_template("template_name", "hello, (( name ))!");
+    /// assert!(result.is_ok());
+    ///
+    /// let second = engine.add_template("template_name", "hello again");
+    /// assert!(second.is_err());
+    /// ```
+    pub fn add_template(&mut self, name: &'source str, text: &'source str) -> Result<(), Error> {
+        if let Some(_) = self.templates.get(name) {
+            return Err(Error::build(format!(
+                "template with name `{name}` already exists in engine, \
+                overwrite it with `.add_template_must"
+            )));
+        }
+
+        let template = Parser::new(text)
+            .compile(Some(name))
+            .map_err(|e| e.template(name))?;
+
+        self.templates.insert(name.to_owned(), template);
+        Ok(())
+    }
+
+    /// Compile and store a new [`Template`] with the given name.
+    ///
+    /// If a `Template` with the given name already exists in the [`Engine`],
+    /// it is overwritten.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when compilation fails, which most likely means the source
+    /// contains invalid syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Engine;
+    ///
+    /// let mut engine = Engine::default();
+    /// engine.add_template_must("template_name", "hello, (( name ))!");
+    /// ```
+    pub fn add_template_must(
+        &mut self,
+        name: &'source str,
+        text: &'source str,
+    ) -> Result<(), Error> {
+        let template = Parser::new(text)
+            .compile(Some(name))
+            .map_err(|e| e.template(name))?;
+
+        self.templates.insert(name.to_owned(), template);
+        Ok(())
+    }
+
+    /// Return the named [`Template`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Engine;
+    ///
+    /// let mut engine = Engine::default();
+    /// engine.add_template_must("template_name", "hello, (( name ))!");
+    ///
+    /// let template = engine.get_template("template_name");
+    /// assert!(template.is_some());
+    pub fn get_template(&self, name: &str) -> Option<&Template> {
+        self.templates.get(name)
     }
 
     /// Add a [`Filter`].

@@ -2,7 +2,9 @@ mod compare;
 
 use crate::{
     compile::{
-        tree::{Arguments, Base, Call, CheckBranch, Expression, Iterable, Key, Output, Set, Tree},
+        tree::{
+            Arguments, Base, Call, CheckBranch, Expression, If, Iterable, Key, Output, Set, Tree,
+        },
         Scope, Template,
     },
     log::{error_write, Error, INCOMPATIBLE_TYPES, INVALID_FILTER},
@@ -52,7 +54,7 @@ pub struct Renderer<'source, 'store> {
     /// Contains the [`Store`] and any shadowed data.
     shadow: Shadow<'store>,
     /// Storage for `Block` tags.
-    blocks: Vec<(String, Scope)>,
+    blocks: Vec<(&'source str, Scope)>,
 }
 
 impl<'source, 'store> Renderer<'source, 'store> {
@@ -79,8 +81,14 @@ impl<'source, 'store> Renderer<'source, 'store> {
     pub fn render(&mut self) -> Result<String, Error> {
         let mut buffer = String::with_capacity(self.template.source.len());
         let mut pipe = Pipe::new(&mut buffer);
-
-        self.render_scope(&self.template.scope, &mut pipe)?;
+        self.render_scope(&self.template.scope, &mut pipe)
+            .map_err(|e| {
+                if let Some(name) = self.template.name {
+                    e.template(name)
+                } else {
+                    e
+                }
+            })?;
         Ok(buffer)
     }
 
@@ -91,7 +99,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// Returns an [`Error`] if any of the [`Tree`] instances in the `Scope` cannot be rendered.
     fn render_scope(&mut self, scope: &Scope, pipe: &mut Pipe) -> Result<(), Error> {
         let mut tree = scope.data.iter();
-        'render: while let Some(next) = tree.next() {
+        while let Some(next) = tree.next() {
             self.shadow.push();
 
             match next {
@@ -104,15 +112,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
                     pipe.write_value(&value).map_err(|_| error_write())?
                 }
                 Tree::If(i) => {
-                    for branch in i.tree.branches.iter() {
-                        if !self.evaluate_branch(branch)? {
-                            if i.else_branch.is_some() {
-                                self.render_scope(i.else_branch.as_ref().unwrap(), pipe)?;
-                            }
-                            continue 'render;
-                        }
-                    }
-                    self.render_scope(&i.then_branch, pipe)?;
+                    self.render_if(i, pipe)?;
                 }
                 Tree::For(fo) => {
                     self.render_for(fo, pipe)?;
@@ -125,13 +125,31 @@ impl<'source, 'store> Renderer<'source, 'store> {
         Ok(())
     }
 
-    /// Render a [`For`].
+    /// Render an [`If`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if a [`Scope`] is chosed to be rendered, and one of the [`Tree`]
+    /// instances within that `Scope` fails to render.
+    fn render_if(&mut self, i: &If, pipe: &mut Pipe) -> Result<(), Error> {
+        for branch in i.tree.branches.iter() {
+            if !self.evaluate_branch(branch)? {
+                if i.else_branch.is_some() {
+                    self.render_scope(i.else_branch.as_ref().unwrap(), pipe)?;
+                }
+                return Ok(());
+            }
+        }
+        self.render_scope(&i.then_branch, pipe)
+    }
+
+    /// Render an [`Iterable`].
     ///
     /// # Errors
     ///
     /// Returns an [`Error`] when accessing the literal value of a [`Region`] fails,
     /// rendering a [`Tree`] within the [`Scope`] instances contained by the body of
-    /// the `For` fails, or the [`Base`] within the given [`Iterable`] is not found in
+    /// the `Iterable` fails, or the [`Base`] within the given `Iterable` is not found in
     /// the [`Store`].
     fn render_for(&mut self, iterable: &Iterable, pipe: &mut Pipe) -> Result<(), Error> {
         let value = self.evaluate_base(&iterable.base)?;
@@ -279,7 +297,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// # Errors
     ///
     /// Returns an [`Error`] when rendering the `Base` of the `Call` chain fails,
-    /// or executing a [`Filter`] returns an [`Error`] itself.
+    /// or executing a [`Filter`][`crate::filter::Filter`] returns an [`Error`] itself.
     fn evaluate_call(&self, call: &'store Call) -> Result<Cow<Value>, Error> {
         let mut call_stack = vec![call];
         let mut begin: &Expression = &call.receiver;
@@ -422,7 +440,7 @@ mod tests {
     fn test_render_raw() {
         let result = Renderer::new(
             &Engine::default(),
-            &Parser::new("hello there").compile().unwrap(),
+            &Parser::new("hello there").compile(None).unwrap(),
             &Store::new(),
         )
         .render();
@@ -434,7 +452,9 @@ mod tests {
     fn test_render_output() {
         let result = Renderer::new(
             &Engine::default(),
-            &Parser::new("hello there, (( name ))!").compile().unwrap(),
+            &Parser::new("hello there, (( name ))!")
+                .compile(None)
+                .unwrap(),
             &Store::new().with_must("name", "taylor"),
         )
         .render();
@@ -449,7 +469,7 @@ mod tests {
         let result = Renderer::new(
             &Engine::default(),
             &Parser::new("hello there, ((- name -)) !")
-                .compile()
+                .compile(None)
                 .unwrap(),
             &Store::new().with_must("name", "taylor"),
         )
@@ -473,7 +493,7 @@ mod tests {
                     d\
                  (* endif *)",
             )
-            .compile()
+            .compile(None)
             .unwrap(),
             &Store::new().with_must("left", 101).with_must("name", ""),
         )
@@ -493,7 +513,7 @@ mod tests {
                     (* endfor *)\
                 (* endfor *)",
             )
-            .compile()
+            .compile(None)
             .unwrap(),
             &Store::new()
                 .with_must("first", "ab")
@@ -517,7 +537,7 @@ mod tests {
                     (( index )) - (( value )) \
                 (* endfor *)",
             )
-            .compile()
+            .compile(None)
             .unwrap(),
             &Store::new().with_must("data", json!(["one", "two"])),
         )
@@ -534,7 +554,7 @@ mod tests {
                     (( key )) - (( value ))\
                 (* endfor *)",
             )
-            .compile()
+            .compile(None)
             .unwrap(),
             &Store::new().with_must("data", json!({"one": "two"})),
         )
@@ -551,7 +571,7 @@ mod tests {
                     (( value ))\
                 (* endfor *)",
             )
-            .compile()
+            .compile(None)
             .unwrap(),
             &Store::new().with_must("data", json!({"one": "two"})),
         )
