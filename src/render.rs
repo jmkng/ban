@@ -3,7 +3,8 @@ mod compare;
 use crate::{
     compile::{
         tree::{
-            Arguments, Base, Call, CheckBranch, Expression, If, Iterable, Key, Output, Set, Tree,
+            Arguments, Base, Call, CheckBranch, Expression, If, Iterable, Key, Let, Output, Set,
+            Tree,
         },
         Scope, Template,
     },
@@ -100,8 +101,6 @@ impl<'source, 'store> Renderer<'source, 'store> {
     fn render_scope(&mut self, scope: &Scope, pipe: &mut Pipe) -> Result<(), Error> {
         let mut tree = scope.data.iter();
         while let Some(next) = tree.next() {
-            self.shadow.push();
-
             match next {
                 Tree::Raw(ra) => {
                     let value = self.evaluate_raw(ra)?;
@@ -117,10 +116,11 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 Tree::For(fo) => {
                     self.render_for(fo, pipe)?;
                 }
+                Tree::Let(le) => {
+                    self.evaluate_let(le)?;
+                }
                 Tree::Include(_) => todo!(),
             }
-
-            self.shadow.pop();
         }
         Ok(())
     }
@@ -152,23 +152,24 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// the `Iterable` fails, or the [`Base`] within the given `Iterable` is not found in
     /// the [`Store`].
     fn render_for(&mut self, iterable: &Iterable, pipe: &mut Pipe) -> Result<(), Error> {
+        self.shadow.push();
         let value = self.evaluate_base(&iterable.base)?;
         match value.as_ref() {
             Value::String(st) => {
                 for (index, char) in st.to_owned().char_indices() {
-                    self.shadow((Some(index), char), &iterable.set)?;
+                    self.shadow(&iterable.set, (Some(index), char))?;
                     self.render_scope(&iterable.data, pipe)?;
                 }
             }
             Value::Array(ar) => {
                 for (index, value) in ar.to_owned().iter().enumerate() {
-                    self.shadow((Some(index), value), &iterable.set)?;
+                    self.shadow(&iterable.set, (Some(index), value))?;
                     self.render_scope(&iterable.data, pipe)?;
                 }
             }
             Value::Object(ob) => {
                 for (key, value) in ob.to_owned().iter() {
-                    self.shadow((Some(key), value), &iterable.set)?;
+                    self.shadow(&iterable.set, (Some(key), value))?;
                     self.render_scope(&iterable.data, pipe)?;
                 }
             }
@@ -179,37 +180,8 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 )))
             }
         }
-        Ok(())
-    }
 
-    /// Shadow the given [`Set`] with the provided data.
-    ///
-    /// # Errors
-    ///
-    /// Returns an [`Error`] when accessing the literal value of a [`Region`] fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics when a `Set` of type `Pair` is received, but the .0 property in the
-    /// "pair" parameter is None.
-    fn shadow<N, T>(&mut self, pair: (Option<N>, T), set: &Set) -> Result<(), Error>
-    where
-        N: Serialize + Display,
-        T: Serialize + Display,
-    {
-        let source = self.template.source;
-        match set {
-            Set::Single(si) => {
-                let key = si.region.literal(source)?;
-                self.shadow.insert_must(key, pair.1)
-            }
-            Set::Pair(pa) => {
-                let key = pa.key.region.literal(source)?;
-                let value = pa.value.region.literal(source)?;
-                self.shadow.insert_must(key, pair.0.unwrap());
-                self.shadow.insert_must(value, pair.1);
-            }
-        }
+        self.shadow.pop();
         Ok(())
     }
 
@@ -400,7 +372,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
         Ok(value)
     }
 
-    /// Evaluate an [`Arguments`] instance to return a [`HashMap`] that contains the same values.
+    /// Evaluate an [`Arguments`] to return a [`HashMap`] that contains the same values.
     ///
     /// As described in the filter module, any argument without a name will
     /// be automatically assigned a name.
@@ -427,6 +399,47 @@ impl<'source, 'store> Renderer<'source, 'store> {
         }
 
         Ok(buffer)
+    }
+
+    /// Evaluate a [`Let`] to make an assignment to the current [`Shadow`] scope.
+    fn evaluate_let(&mut self, le: &Let) -> Result<(), Error> {
+        let value = self.evaluate_base(&le.right)?;
+        self.shadow(
+            &Set::Single(le.left.clone()),
+            (None::<Value>, value.into_owned()),
+        )?;
+        Ok(())
+    }
+
+    /// Assign the given data to the [`Set`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when accessing the literal value of a [`Region`] fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a `Set` of type `Pair` is received, but the .0 property in the
+    /// "pair" parameter is None.
+    fn shadow<N, T>(&mut self, set: &Set, data: (Option<N>, T)) -> Result<(), Error>
+    where
+        N: Serialize + Display,
+        T: Serialize + Display,
+    {
+        let source = self.template.source;
+        match set {
+            Set::Single(si) => {
+                let key = si.region.literal(source)?;
+                self.shadow.insert_must(key, data.1)
+            }
+            Set::Pair(pa) => {
+                let key = pa.key.region.literal(source)?;
+                let value = pa.value.region.literal(source)?;
+                self.shadow.insert_must(key, data.0.unwrap());
+                self.shadow.insert_must(value, data.1);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -577,5 +590,48 @@ mod tests {
         )
         .render();
         assert_eq!(result.unwrap(), "two");
+    }
+
+    #[test]
+    fn test_let_global_scope() {
+        let result = Renderer::new(
+            &Engine::default(),
+            &Parser::new(
+                "(* if is_admin *)\
+                    (* let name = \"admin\" *)\
+                (* else *)\
+                    (* let name = user.name *)\
+                (* endif *)\
+                Hello, (( name )).",
+            )
+            .compile(None)
+            .unwrap(),
+            &Store::new()
+                .with_must("is_admin", false)
+                .with_must("user", json!({"name": "taylor"})),
+        )
+        .render();
+        assert_eq!(result.unwrap(), "Hello, taylor.");
+    }
+
+    #[test]
+    fn test_let_scoped() {
+        let result = Renderer::new(
+            &Engine::default(),
+            &Parser::new(
+                "(* for item in inventory *)\
+                    (* let name = item.description.name *)\
+                    Item: (( name ))\
+                (* endfor *)\
+                Last item name: (( name )).",
+            )
+            .compile(None)
+            .unwrap(),
+            &Store::new().with_must("inventory", json!([{"description": {"name": "sword"}}])),
+        )
+        .render();
+
+        assert!(result.is_err());
+        // println!("{:#}", result.unwrap_err());
     }
 }

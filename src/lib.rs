@@ -224,6 +224,48 @@
 //! 3. String:
 //!     - i: index
 //!     - item: char
+//!
+//! ## Let
+//!
+//! Let blocks allow you to assign values to identifiers.
+//!
+//!
+//! ```html
+//! (* let name = "taylor" *)
+//! ```
+//!
+//! The left side of the expression expects an identifier, meaning an unquoted string,
+//! while the right side may be an identifier pointing to some value within the [`Store`],
+//! or literal data as seen in the example above.
+//!
+//! Assignments made within a for block will be scoped to the lifetime of that for block,
+//! while assignments made anywhere else are globally scoped.
+//!
+//! In this example, the "name" variable exists within the loop, but will not be found
+//! after it ends:
+//!
+//! ```html
+//! (* for item in inventory *)
+//!     (* let name = item.description.name *)
+//!     Item: (( name ))
+//! (* endfor *)
+//!
+//! Last item name: (( name )). // <-- error
+//! ```
+//!
+//! In this example, an if block is used to conditionally assign a variable that is
+//! available globally.
+//!
+//! ```html
+//! (* if is_admin *)
+//!     (* let name = "admin" *)
+//! (* else *)
+//!     (* let name = user.name *)
+//! (* endif *)
+//!
+//! Hello, (( name )).
+//! ```
+//!
 #![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
 #![warn(clippy::missing_docs)]

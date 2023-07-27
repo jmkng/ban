@@ -1,4 +1,4 @@
-use super::tree::Base;
+use super::tree::{Base, Identifier};
 use crate::compile::tree::{CheckTree, Set};
 use std::fmt::Display;
 
@@ -16,6 +16,8 @@ pub enum Block {
     For(Set, Base),
     /// The "(* endfor *)" part of a "for" Block.
     EndFor,
+    /// An assignment block such as "(* let this = that *)".
+    Let(Identifier, Base),
     /// TODO
     Include(String, Option<Base>),
 }
@@ -29,6 +31,7 @@ impl Display for Block {
             Block::EndIf => write!(f, "end if"),
             Block::For(_, _) => write!(f, "for"),
             Block::EndFor => write!(f, "end for"),
+            Block::Let(_, _) => write!(f, "let"),
             Block::Include(_, _) => write!(f, "include"),
         }
     }

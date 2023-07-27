@@ -238,6 +238,10 @@ impl<'source> Parser<'source> {
 
                             tree
                         }
+                        Block::Let(identifier, base) => Tree::Let(Let {
+                            left: identifier,
+                            right: base,
+                        }),
                         // TODO
                         Block::Include(_, _) => todo!(),
                     }
@@ -272,7 +276,7 @@ impl<'source> Parser<'source> {
     /// Parse a [`Block`].
     ///
     /// A `Block` is a call to evaluate some kind of expression which may have
-    /// side effects on the `Store` data.
+    /// side effects on the `Shadow` data.
     fn parse_block(&mut self) -> Result<Block, Error> {
         // from
         // |
@@ -305,10 +309,14 @@ impl<'source> Parser<'source> {
                 Ok(Block::For(variables, base))
             }
             Keyword::EndFor => Ok(Block::EndFor),
+            Keyword::Let => {
+                let left = self.parse_identifier()?;
+                self.next_must(Token::Assign)?;
+                let right = self.parse_base()?;
+                Ok(Block::Let(left, right))
+            }
             // TODO
             Keyword::Include => todo!(),
-            // TODO
-            Keyword::Let => todo!(),
             // TODO
             Keyword::Extends => todo!(),
             // TODO
@@ -333,8 +341,8 @@ impl<'source> Parser<'source> {
         while self.peek_is(Token::Pipe)? {
             self.next_must(Token::Pipe)?;
 
-            let name = self.parse_ident()?;
-            let arguments = self.parse_args()?;
+            let name = self.parse_identifier()?;
+            let arguments = self.parse_arguments()?;
             let end_as: Region = if arguments.is_some() {
                 arguments.as_ref().unwrap().region
             } else {
@@ -359,9 +367,8 @@ impl<'source> Parser<'source> {
     /// to determine if the block should pass.
     fn parse_tree(&mut self) -> Result<CheckTree, Error> {
         // this >= that && these == those || a == b *)
-        // |-------------    --------------   ------|
+        // |-----------    --------------    ------|
         // from  |                  |            |  to
-        //       |                  |            |
         //       negatable          negatable    negatable
         let mut tree = CheckTree::new();
         let mut state = CheckState::default();
@@ -453,13 +460,13 @@ impl<'source> Parser<'source> {
     ///
     /// Returns an [`Error`] if the next token is not an [`Identifier`].
     fn parse_set(&mut self) -> Result<Set, Error> {
-        let key = self.parse_ident()?;
+        let key = self.parse_identifier()?;
         if !self.peek_is(Token::Comma)? {
             return Ok(Set::Single(key));
         }
 
         self.next_must(Token::Comma)?;
-        let value = self.parse_ident()?;
+        let value = self.parse_identifier()?;
         let merged = key.region.combine(value.region);
 
         Ok(Set::Pair(KeyValue {
@@ -491,7 +498,7 @@ impl<'source> Parser<'source> {
     ///
     /// Propagates any errors that occur while parsing a [`Base`]
     /// for the argument(s).
-    fn parse_args(&mut self) -> Result<Option<Arguments>, Error> {
+    fn parse_arguments(&mut self) -> Result<Option<Arguments>, Error> {
         let mut values: Vec<(Option<Region>, Base)> = vec![];
 
         while !self.peek_is(Token::Pipe)? && !self.peek_is(Token::EndExpression)? {
@@ -538,7 +545,7 @@ impl<'source> Parser<'source> {
     ///
     /// Propagates an error from next_must if the next token is not an
     /// [`Identifier`].
-    fn parse_ident(&mut self) -> Result<Identifier, Error> {
+    fn parse_identifier(&mut self) -> Result<Identifier, Error> {
         let (_, region) = self.next_must(Token::Identifier)?;
         Ok(Identifier { region })
     }

@@ -1,6 +1,6 @@
 use super::Scope;
 
-/// A compiled [`Template`] that can be rendered with a `Store`.
+/// A compiled [`Template`] that can be rendered with a [`Store`][`crate::Store`].
 #[derive(Debug, Clone)]
 pub struct Template<'source> {
     /// The name of the [`Template`].

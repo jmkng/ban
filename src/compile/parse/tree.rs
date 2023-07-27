@@ -17,6 +17,8 @@ pub enum Tree {
     If(If),
     /// A for loop.
     For(Iterable),
+    /// Variable assignment.
+    Let(Let),
 }
 
 /// Represents data within expression tags, "(( ))" by default, and may be a Base
@@ -356,4 +358,13 @@ pub struct KeyValue {
     pub value: Identifier,
     /// TODO
     pub region: Region,
+}
+
+/// Assignment of left to right.
+#[derive(Debug, Clone)]
+pub struct Let {
+    /// The variable name.
+    pub left: Identifier,
+    /// The value to be assigned to the variable name.
+    pub right: Base,
 }

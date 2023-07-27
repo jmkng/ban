@@ -3,7 +3,8 @@ use serde::Serialize;
 use serde_json::{to_value, Value};
 use std::{collections::HashMap, fmt::Display};
 
-/// Provides storage for data that a `Template` can be rendered with.
+/// Provides storage for data that a [`Template`][`crate::Template`] can be
+/// rendered with.
 #[derive(Debug)]
 pub struct Store {
     data: HashMap<String, Value>,
@@ -164,7 +165,7 @@ impl<'store> Shadow<'store> {
     pub(crate) fn new(store: &'store Store) -> Self {
         Self {
             store,
-            data: vec![],
+            data: vec![HashMap::new()],
         }
     }
 
@@ -175,6 +176,9 @@ impl<'store> Shadow<'store> {
 
     /// Remove the top frame from the [`Shadow`] stack.
     pub(crate) fn pop(&mut self) {
+        if self.data.len() == 1 {
+            panic!("should never pop last scope");
+        }
         self.data.pop();
     }
 
