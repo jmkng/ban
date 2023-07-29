@@ -58,8 +58,8 @@ impl<'source> Parser<'source> {
                 //
                 // Expected:
                 //
-                // (BASE) [FILTER ...]
-                // ------
+                // BASE [FILTER ...] ...
+                // ----
                 (Token::BeginExpression, region) => {
                     let expression = self.parse_expression()?;
                     let end = self.next_must(Token::EndExpression)?.1.combine(region);
@@ -69,8 +69,8 @@ impl<'source> Parser<'source> {
                 //
                 // Expected:
                 //
-                // (KEYWORD)
-                // ---------
+                // KEYWORD ...
+                // -------
                 (Token::BeginBlock, region) => {
                     let block = self.parse_block()?;
                     let end = self.next_must(Token::EndBlock)?.1.combine(region);
@@ -80,7 +80,7 @@ impl<'source> Parser<'source> {
                         //
                         // Expected:
                         //
-                        // [ELSEIF ...] | [ELSE] | ENDIF
+                        // [ELSEIF ...] | [ELSE] | ENDIF ...
                         //                         -----
                         Block::If(tr) => {
                             states.push(BlockState::If {
@@ -96,7 +96,7 @@ impl<'source> Parser<'source> {
                         //
                         // Expected:
                         //
-                        // [ELSEIF ...] | [ELSE] | ENDIF
+                        // [ELSEIF ...] | [ELSE] | ENDIF ...
                         //                         -----
                         Block::ElseIf(tr) => {
                             let error = || {
@@ -131,7 +131,7 @@ impl<'source> Parser<'source> {
                         //
                         // Expected:
                         //
-                        // ENDIF
+                        // ENDIF ...
                         // -----
                         Block::Else => {
                             let error = || {
@@ -146,7 +146,6 @@ impl<'source> Parser<'source> {
                             match states.last_mut().ok_or_else(error)? {
                                 BlockState::If {
                                     has_else: has_else @ false,
-                                    region: end,
                                     ..
                                 } => *has_else = true,
                                 _ => return Err(error()),
@@ -201,8 +200,8 @@ impl<'source> Parser<'source> {
                         //
                         // Expected:
                         //
-                        // BASE [,] [BASE] IN BASE
-                        // ----            -- ----
+                        // BASE [,] [BASE] IN BASE ENDFOR ...
+                        // ----            -- ---- ------
                         Block::For(set, base) => {
                             states.push(BlockState::For { set, base, region });
                             scopes.push(Scope::new());
@@ -238,12 +237,20 @@ impl<'source> Parser<'source> {
 
                             tree
                         }
-                        Block::Let(identifier, base) => Tree::Let(Let {
-                            left: identifier,
-                            right: base,
-                        }),
-                        // TODO
-                        Block::Include(_, _) => todo!(),
+                        // A "let" block.
+                        //
+                        // Expected:
+                        //
+                        // BASE = BASE ...
+                        // ---- - ----
+                        Block::Let(left, right) => Tree::Let(Let { left, right }),
+                        // An "include" block.
+                        //
+                        // Expected:
+                        //
+                        // BASE [BASE] ...
+                        // ----
+                        Block::Include(name, mount) => Tree::Include(Include { name, mount }),
                     }
                 }
                 _ => unreachable!("lexer will abort without begin block"),
@@ -285,7 +292,7 @@ impl<'source> Parser<'source> {
         // (* endfor *)
         //          |
         //          to
-        let (keyword, _) = self.parse_keyword()?;
+        let (keyword, region) = self.parse_keyword()?;
 
         match keyword {
             Keyword::If => {
@@ -315,17 +322,61 @@ impl<'source> Parser<'source> {
                 let right = self.parse_base()?;
                 Ok(Block::Let(left, right))
             }
-            // TODO
-            Keyword::Include => todo!(),
-            // TODO
+            Keyword::Include => {
+                let name = self.parse_base()?;
+                let scope = self.parse_mount()?;
+                Ok(Block::Include(name, scope))
+            }
             Keyword::Extends => todo!(),
-            // TODO
             Keyword::Block => todo!(),
-            // TODO
             Keyword::EndBlock => todo!(),
-            // TODO
-            _ => todo!(), // TODO: err
+            unexpected => Err(Error::build(UNEXPECTED_TOKEN)
+                .pointer(self.lexer.source, region)
+                .help(format!(
+                    "keyword `{unexpected}` is not valid in this position"
+                ))),
         }
+    }
+
+    /// Parse a [`Mount`].
+    ///
+    /// Similar to `.parse_arguments`, but requires that all arguments
+    /// are named.
+    fn parse_mount(&mut self) -> Result<Option<Mount>, Error> {
+        // "(* include "header" title: site.title *)"
+        //                     ^-----------------^
+        //                     from              to
+        let mut values: Vec<Point> = vec![];
+
+        while !self.peek_is(Token::EndBlock)? {
+            let argument = self.parse_argument()?;
+            if argument.name.is_none() {
+                return Err(Error::build(INVALID_SYNTAX)
+                    .pointer(self.lexer.source, argument.value.get_region())
+                    .help(format!(
+                        "arguments in an `include` block must be named, \
+                        try `[name: ]{}`",
+                        argument.value.get_region().literal(self.lexer.source)?
+                    )));
+            }
+
+            values.push(Point {
+                name: argument.name.unwrap(),
+                value: argument.value,
+            })
+        }
+        if values.is_empty() {
+            return Ok(None);
+        }
+
+        let first = values.first().unwrap();
+        let mut region = first.name.combine(first.value.get_region());
+        if values.len() > 1 {
+            let last = values.last().unwrap();
+            region = region.combine(last.value.get_region())
+        }
+
+        Ok(Some(Mount { values, region }))
     }
 
     /// Parse an [`Expression`].
@@ -334,8 +385,8 @@ impl<'source> Parser<'source> {
     /// and may contain one or more "filters" which are used to modify the output.
     fn parse_expression(&mut self) -> Result<Expression, Error> {
         // (( name | prepend 1: "hello, " | append "!" | upper ))
-        // |                                                  |
-        // from                                               to
+        //   |                                                |
+        //   from                                             to
         let mut expression = Expression::Base(self.parse_base()?);
 
         while self.peek_is(Token::Pipe)? {
@@ -499,52 +550,59 @@ impl<'source> Parser<'source> {
     /// Propagates any errors that occur while parsing a [`Base`]
     /// for the argument(s).
     fn parse_arguments(&mut self) -> Result<Option<Arguments>, Error> {
-        let mut values: Vec<(Option<Region>, Base)> = vec![];
+        // "hello (( name | prepend 1: "hello, " | append "!", "?" | upper ))"
+        //                         ^------------^        ^--------^
+        //                         from         to       from     to
+        let mut values: Vec<Argument> = vec![];
 
         while !self.peek_is(Token::Pipe)? && !self.peek_is(Token::EndExpression)? {
-            let name_or_value = self.parse_base()?;
-            if self.peek_is(Token::Colon)? {
-                self.next_must(Token::Colon)?;
-                let value = self.parse_base()?;
-                values.push((Some(name_or_value.get_region()), value))
-            } else {
-                values.push((None, name_or_value))
-            }
+            values.push(self.parse_argument()?);
         }
         if values.is_empty() {
             return Ok(None);
         }
 
-        // TODO: Move this to impl?
-
-        // Gets the true Region of the given argument.
-        let get_region = |pair: &(Option<Region>, Base)| {
-            if pair.0.is_some() {
-                pair.0.unwrap().combine(pair.1.get_region())
-            } else {
-                pair.1.get_region()
-            }
-        };
-
-        let first = values.first().unwrap();
-        let mut region = get_region(first);
-
+        let mut region = values.first().unwrap().get_region();
         if values.len() > 1 {
             let last = values.last().unwrap();
-
-            let last_region = get_region(last);
-            region = region.combine(last_region)
+            region = region.combine(last.get_region())
         }
 
         Ok(Some(Arguments { values, region }))
+    }
+
+    /// Parse an [`Argument`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if a valid `Argument` cannot be made
+    /// with the next tokens.
+    fn parse_argument(&mut self) -> Result<Argument, Error> {
+        let name_or_value = self.parse_base()?;
+
+        // Named argument.
+        if self.peek_is(Token::Colon)? {
+            self.next_must(Token::Colon)?;
+
+            let value = self.parse_base()?;
+            return Ok(Argument {
+                name: Some(name_or_value.get_region()),
+                value,
+            });
+        }
+
+        // Anonymous argument.
+        Ok(Argument {
+            name: None,
+            value: name_or_value,
+        })
     }
 
     /// Parse an [`Identifier`].
     ///
     /// # Errors
     ///
-    /// Propagates an error from next_must if the next token is not an
-    /// [`Identifier`].
+    /// Returns an [`Error`] if the next token is not an [`Identifier`].
     fn parse_identifier(&mut self) -> Result<Identifier, Error> {
         let (_, region) = self.next_must(Token::Identifier)?;
         Ok(Identifier { region })
@@ -609,7 +667,7 @@ impl<'source> Parser<'source> {
                 Base::Literal(literal)
             }
             (Token::Identifier, region) => {
-                let mut path = vec![Key::from(Identifier { region })];
+                let mut path = vec![Identifier { region }];
 
                 // Keep chaining keys as long as we see a period.
                 while self.peek_is(Token::Period)? {
@@ -649,9 +707,9 @@ impl<'source> Parser<'source> {
     /// # Errors
     ///
     /// Returns an error if the next token is not a valid [`Identifier`].
-    fn parse_key(&mut self) -> Result<Key, Error> {
+    fn parse_key(&mut self) -> Result<Identifier, Error> {
         match self.next_any_must()? {
-            (Token::Identifier, region) => Ok(Key::from(Identifier { region })),
+            (Token::Identifier, region) => Ok(Identifier { region }),
             (_, region) => Err(Error::build(UNEXPECTED_TOKEN)
                 .pointer(self.lexer.source, region)
                 .help("expected an unquoted identifier such as `one.two`")),
@@ -827,7 +885,7 @@ mod tests {
 
     #[test]
     fn test_parse_full_expression() {
-        let source = "hello (( name | prepend 1: \"hello, \" | append \"!\" | upper ))";
+        let source = "hello (( name | prepend text: \"hello, \" | append \"!\" \"?\" | upper ))";
         let result = Parser::new(source).compile(None);
         assert!(result.is_ok());
         // println!("{:#?}", result.unwrap().scope.tokens);
@@ -890,6 +948,35 @@ mod tests {
         // println!("{:#}", result.unwrap_err());
     }
 
+    #[test]
+    fn test_parse_for_valid() {
+        //
+        //                         ---- identifier 2
+        let source = "(* for this, that in thing *)hello(* endfor *)";
+        //                   ---|          ----|   ----|
+        //                      identifier 1   base    data <---- rendered n times
+        let mut parser = get_parser_n(source, 2);
+        let result = parser.parse_set().unwrap();
+        match result {
+            Set::Pair(pa) => {
+                assert_eq!(pa.key.region.literal(source).unwrap(), "this");
+                assert_eq!(pa.value.region.literal(source).unwrap(), "that");
+                assert_eq!(pa.region.literal(source).unwrap(), "this, that");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn parse_mount() {
+        //                       -------- name
+        let source = "(* include \"base\" x: data.related *)";
+        //                                --------------- mount
+        let mut parser = get_parser_n(source, 3);
+        let result = parser.parse_mount();
+        assert!(result.is_ok_and(|t| t.is_some()));
+    }
+
     /// Return a [`Parser`] over the given text that has already read
     /// "n" amount of tokens.
     ///
@@ -904,24 +991,5 @@ mod tests {
         }
 
         parser
-    }
-
-    #[test]
-    fn test_parse_for_valid() {
-        //                      Identifier 2
-        //                         ----
-        let source = "(* for this, that in thing *)hello(* endfor *)";
-        //                   ----          -----   -----
-        //                Identifier 1      Base   Data <---- rendered n times
-        let mut parser = get_parser_n(source, 2);
-        let result = parser.parse_set().unwrap();
-        match result {
-            Set::Pair(pa) => {
-                assert_eq!(pa.key.region.literal(source).unwrap(), "this");
-                assert_eq!(pa.value.region.literal(source).unwrap(), "that");
-                assert_eq!(pa.region.literal(source).unwrap(), "this, that");
-            }
-            _ => unreachable!(),
-        }
     }
 }

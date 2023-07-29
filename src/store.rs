@@ -156,7 +156,7 @@ impl Store {
 // shadowed data.
 #[derive(Debug)]
 pub(crate) struct Shadow<'store> {
-    store: &'store Store,
+    pub(crate) store: &'store Store,
     data: Vec<HashMap<String, Value>>,
 }
 

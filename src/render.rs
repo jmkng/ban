@@ -3,8 +3,8 @@ mod compare;
 use crate::{
     compile::{
         tree::{
-            Arguments, Base, Call, CheckBranch, Expression, If, Iterable, Key, Let, Output, Set,
-            Tree,
+            Arguments, Base, Call, CheckBranch, Expression, Identifier, If, Include, Iterable, Let,
+            Output, Set, Tree,
         },
         Scope, Template,
     },
@@ -82,13 +82,15 @@ impl<'source, 'store> Renderer<'source, 'store> {
     pub fn render(&mut self) -> Result<String, Error> {
         let mut buffer = String::with_capacity(self.template.source.len());
         let mut pipe = Pipe::new(&mut buffer);
+
         self.render_scope(&self.template.scope, &mut pipe)
             .map_err(|e| {
-                if let Some(name) = self.template.name {
-                    e.template(name)
-                } else {
-                    e
+                // Error might have bubbled up from another template,
+                // so don't overwrite it.
+                if !e.is_named() && self.template.name.is_some() {
+                    return e.template(self.template.name.unwrap());
                 }
+                e
             })?;
         Ok(buffer)
     }
@@ -119,9 +121,54 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 Tree::Let(le) => {
                     self.evaluate_let(le)?;
                 }
-                Tree::Include(_) => todo!(),
+                Tree::Include(inc) => {
+                    self.render_include(inc, pipe)?;
+                }
             }
         }
+        Ok(())
+    }
+
+    /// Render an [`Include`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if the named [`Template`] is not found in the [`Engine`],
+    /// or rendering any [`Tree`] instances within the template fails.
+    fn render_include(&mut self, include: &Include, pipe: &mut Pipe) -> Result<(), Error> {
+        let name_region = include.name.get_region();
+        let name = name_region.literal(self.template.source)?;
+
+        let template = self.engine.get_template(name);
+        if template.is_none() {
+            let mut help = format!(
+                "try adding the template `{name}` to the engine with `.add_template` first"
+            );
+            if name.starts_with('"') && name.ends_with('"') {
+                help = format!("{help}, or you may want to remove the surrounding quotes")
+            }
+
+            return Err(Error::build("missing template")
+                .pointer(self.template.source, name_region)
+                .help(help));
+        }
+        let template = template.unwrap();
+
+        let result = if include.mount.is_some() {
+            // Scoped include, create a new store that includes only the named values.
+            let mut scoped_store = Store::new();
+            for point in include.mount.as_ref().unwrap().values.iter() {
+                let name = point.name.literal(self.template.source)?;
+                let value = self.evaluate_base(&point.value)?;
+                scoped_store.insert_must(name, value);
+            }
+            Renderer::new(self.engine, template, &scoped_store).render()?
+        } else {
+            // Unscoped include, use the same store.
+            Renderer::new(self.engine, template, self.shadow.store).render()?
+        };
+
+        pipe.write_str(&result).map_err(|_| error_write())?;
         Ok(())
     }
 
@@ -331,11 +378,11 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// Returns an [`Error`] when accessing the literal value of the [`Region`]
     /// from any of the `Key` instances fails.
-    fn evaluate_keys(&self, keys: &Vec<Key>) -> Result<Cow<Value>, Error> {
+    fn evaluate_keys(&self, keys: &Vec<Identifier>) -> Result<Cow<Value>, Error> {
         let first_region = keys
             .first()
             .expect("key vector should always have at least one key")
-            .get_region();
+            .region;
 
         let first_value = first_region.literal(self.template.source)?;
         let store_value = self.shadow.get(first_value);
@@ -354,14 +401,13 @@ impl<'source, 'store> Renderer<'source, 'store> {
         for key in keys.iter().skip(1) {
             match value.as_object() {
                 Some(object) => {
-                    let key_region = key.get_region();
+                    let key_region = key.region;
                     let key_name = key_region.literal(self.template.source)?;
                     let next_object = object.get(key_name);
 
                     value = if next_object.is_some() {
                         Cow::Owned(next_object.unwrap().clone())
                     } else {
-                        // TODO See TODO above ^
                         Cow::Owned(Value::Null)
                     };
                 }
@@ -386,15 +432,15 @@ impl<'source, 'store> Renderer<'source, 'store> {
         let mut unnamed = 1;
 
         for arg in &arguments.values {
-            let name = if arg.0.is_some() {
-                arg.0.unwrap().literal(self.template.source)?.to_string()
+            let name = if arg.name.is_some() {
+                arg.name.unwrap().literal(self.template.source)?.to_string()
             } else {
                 let temp = unnamed;
                 unnamed += 1;
                 temp.to_string()
             };
 
-            let value = self.evaluate_base(&arg.1)?;
+            let value = self.evaluate_base(&arg.value)?;
             buffer.insert(name, value.into_owned());
         }
 
@@ -475,7 +521,8 @@ mod tests {
         assert_eq!(result.unwrap(), "hello there, taylor!");
     }
 
-    // TODO: Refactor tests
+    // TODO: Refactor/combine tests across parser and renderer,
+    // write a few more to improve error messages on edge cases.
 
     #[test]
     fn test_render_output_whitespace() {
@@ -633,5 +680,23 @@ mod tests {
 
         assert!(result.is_err());
         // println!("{:#}", result.unwrap_err());
+    }
+
+    #[test]
+    fn test_include() {
+        let mut engine = Engine::default();
+        engine
+            .add_template_must("first", "two three (( name ))")
+            .unwrap();
+        engine
+            .add_template_must("second", "one (* include first name: info.name *)")
+            .unwrap();
+
+        let result = engine.render(
+            &engine.get_template("second").unwrap(),
+            &Store::new().with_must("info", json!({"name": "taylor", "age": 28})),
+        );
+        assert_eq!(result.unwrap(), "one two three taylor");
+        // println!("{:#}", result.unwrap());
     }
 }

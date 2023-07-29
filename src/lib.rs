@@ -266,6 +266,65 @@
 //! Hello, (( name )).
 //! ```
 //!
+//! ## Include
+//!
+//! Include blocks allow you to render other registered templates.
+//!
+//! ```html
+//! (* include header *)
+//! ```
+//!
+//! In the above example, "header" is the name of a registered template.
+//! Quoted and unquoted strings are recognized here, but you will most likely want
+//! to use an unquoted string, unless you registered your template with a name that
+//! contains quotes.
+//!
+//! ```rust
+//! use ban::Store;
+//!
+//! let mut engine = ban::default();
+//! engine.add_template_must("header", "hello, there!").unwrap();
+//!
+//! let template = engine.compile(r#"(* include "header" *)"#).unwrap();
+//! let result = engine.render(&template, &Store::new());
+//! assert!(result.is_err());
+//!```
+//!
+//! The above example produces this error:
+//!
+//! ```html
+//! --> ?:1:12
+//!   |
+//! 1 | (* include "header" *)
+//!   |            ^^^^^^^^
+//!   |
+//! = help: try adding the template `"header"` to the engine with `.add_template` first,
+//! or you may want to remove the surrounding quotes
+//! ```
+//!
+//! To resolve this, you may either register your template with the string `"\"header\""`,
+//! or as the error suggests, remove the quotes from the include block.
+//!
+//! When an include block is used, the called template will have access to the same store
+//! data that the calling template does, unless you scope the data by providing arguments.
+//! In this example, the "header" template only has access to a "name" variable.
+//!
+//! ```rust
+//! let mut engine = crate::default();
+//! engine
+//!     .add_template_must("header", "hello, (( name ))!")
+//!     .unwrap();
+//!
+//! let template = engine
+//!     .compile(r#"(* include header name: data.name *)"#)
+//!     .unwrap();
+//!
+//! let result = engine.render(
+//!     &template,
+//!     &Store::new().with_must("data", json!({"name": "taylor", "age": 25})),
+//! );
+//! assert_eq!(result.unwrap(), "hello, taylor!");
+//!```
 #![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
 #![warn(clippy::missing_docs)]
@@ -285,6 +344,7 @@ mod syntax;
 pub use compile::{compile, Template};
 pub use engine::Engine;
 pub use render::render;
+use serde_json::json;
 pub use store::Store;
 pub use syntax::Builder;
 

@@ -212,63 +212,40 @@ impl Base {
 /// Set of `Key` instances that can be used to locate data within the `Store`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
-    /// A sequence of `Key` instances that indicates a path through the
-    /// `Context` to some `Value`.
-    pub path: Vec<Key>,
+    /// A set of [`Identifier`] instances that form  a path through the
+    /// [`Store`][`crate::Store`] to some [`Value`].
+    pub path: Vec<Identifier>,
 }
 
 impl Variable {
-    /// Create a new `Variable` from the given keys.
-    pub fn new(path: Vec<Key>) -> Self {
+    /// Create a new [`Variable`] from the given keys.
+    pub fn new(path: Vec<Identifier>) -> Self {
         Self { path }
     }
 
-    /// Get a Region spanning the area from the first and last Key instances.
+    /// Get a [`Region`] from the first to last [`Identifier`] instance.
     pub fn get_region(&self) -> Region {
-        let mut region = self
-            .path
+        self.path
             .first()
             .unwrap()
-            .get_region()
-            .combine(self.path.last().unwrap().get_region());
-        region
-    }
-}
-
-/// Path segment in a larger identifier.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Key {
-    /// TODO
-    pub identifier: Identifier,
-}
-
-impl Key {
-    /// Get a Region from the internal Identifier.
-    pub fn get_region(&self) -> Region {
-        self.identifier.region
-    }
-}
-
-impl From<Identifier> for Key {
-    /// Create a Key from the given Identifier.
-    fn from(value: Identifier) -> Self {
-        Self { identifier: value }
+            .region
+            .combine(self.path.last().unwrap().region)
     }
 }
 
 /// Area that contains an identifying value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identifier {
-    /// TODO
+    /// The location of the [`Identifier`].
     pub region: Region,
 }
 
 /// Literal data that does not need to be evaluated any further.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Literal {
-    /// TODO
+    /// A [`Value`] representing the [`Literal`].
     pub value: Value,
-    /// TODO
+    /// The location of the [`Literal`].
     pub region: Region,
 }
 
@@ -279,84 +256,127 @@ impl Literal {
     }
 }
 
-/// Call to some registered function.
-///
-/// Refer to an underlying [`Expression`] from which the input data
-/// may be derived.
+/// Command to execute a [`Filter`][`crate::filter::Filter`].
 #[derive(Debug, Clone)]
 pub struct Call {
-    /// TODO
+    /// The name of the [`Filter`][`crate::filter::Filter`].
     pub name: Identifier,
-    /// TODO
+    /// [`Arguments`] passed to the [`Filter`][`crate::filter::Filter`].
     pub arguments: Option<Arguments>,
-    /// TODO
+    /// The source of the input data.
     pub receiver: Box<Expression>,
-    /// TODO
+    /// The location of the [`Call`].
     pub region: Region,
 }
 
-/// Set of arguments that can be provided to a filter.
+/// Set of arguments that can be provided to a
+/// [`Filter`][`crate::filter::Filter`].
 #[derive(Debug, Clone)]
 pub struct Arguments {
-    /// A list of arguments. The optional Region will be Some and point
-    /// to the name of the argument, if it is not anonymous.
-    pub values: Vec<(Option<Region>, Base)>,
-    /// TODO
+    /// A set of [`Argument`] instances, representing the arguments
+    /// passed to a [`Filter`][`crate::filter::Filter`].
+    pub values: Vec<Argument>,
+    /// The location of the [`Arguments`].
     pub region: Region,
+}
+
+/// A single argument.
+#[derive(Debug, Clone)]
+pub struct Argument {
+    /// The name of the [`Argument`], may be None
+    pub name: Option<Region>,
+    /// The value of the [`Argument`].
+    pub value: Base,
+}
+
+impl Argument {
+    /// Get a [`Region`] from the name, if it exists, to the value.
+    pub fn get_region(&self) -> Region {
+        if self.name.is_some() {
+            self.name.unwrap().combine(self.value.get_region())
+        } else {
+            self.value.get_region()
+        }
+    }
+}
+
+/// Set of arguments associated with an [`Include`].
+#[derive(Debug, Clone)]
+pub struct Mount {
+    /// A set of [`Point`] instances, representing the arguments
+    /// passed to an [`Include`].
+    pub values: Vec<Point>,
+    /// The location of the [`Mount`].
+    pub region: Region,
+}
+
+/// A name associated with a [`Base`].
+///
+/// Similar to [`Argument`], but requires a name.
+#[derive(Debug, Clone)]
+pub struct Point {
+    /// The name of the [`Point`].
+    pub name: Region,
+    /// The value of the [`Point`].
+    pub value: Base,
 }
 
 /// Command to render another template.
 #[derive(Debug, Clone)]
 pub struct Include {
-    /// TODO
-    pub name: String,
-    /// TODO
-    pub globals: Option<Expression>,
+    /// The name of the [`Template`][`crate::Template`] to render.
+    pub name: Base,
+    /// An optional set of scoped values to render the [`Include`]
+    /// with.
+    pub mount: Option<Mount>,
 }
 
 /// Conditional rendering block.
 #[derive(Debug, Clone)]
 pub struct If {
-    /// TODO
+    /// Contains the data needed to determine which branch to render.
     pub tree: CheckTree,
-    /// TODO
+    /// The [`Scope`] to render if the [`CheckTree`] contains a truthy
+    /// [`CheckBranch`].
     pub then_branch: Scope,
-    /// TODO
+    /// The [`Scope`] to render if the [`CheckTree`] does not contain
+    /// a truthy [`CheckBranch`].
     pub else_branch: Option<Scope>,
-    /// TODO
+    /// The location of the [`If`].
     pub region: Region,
 }
 
 /// Loop rendering block.
 #[derive(Debug, Clone)]
 pub struct Iterable {
-    /// TODO
+    /// Faux variables that contain the assignment for each iteration.
     pub set: Set,
-    /// TODO
+    /// The [`Base`] to be iterated on.
     pub base: Base,
-    /// TODO
+    /// The [`Scope`] that is rendered with each iteration.
     pub data: Scope,
-    /// TODO
+    /// The location of the [`Iterable`].
     pub region: Region,
 }
 
 /// Variable types derived from a loop.
 #[derive(Debug, Clone)]
 pub enum Set {
-    /// TODO
+    /// A single variable, such as `(* for this in that *)`.
     Single(Identifier),
-    /// TODO
+    /// A pair of variables, such as `(* for i, this in that *)`.
     Pair(KeyValue),
 }
 
 /// Key/value pair.
 #[derive(Debug, Clone)]
 pub struct KeyValue {
-    /// TODO
-    pub key: Identifier,
-    /// TODO
+    /// Contains the "primary" value in a for loop.
     pub value: Identifier,
-    /// TODO
+    /// Contains the "secondary" value in a for loop,
+    /// such as an index or key.
+    pub key: Identifier,
+    /// The location of the [`KeyValue`].
     pub region: Region,
 }
 

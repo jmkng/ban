@@ -5,9 +5,9 @@ use std::fmt::{Debug, Display, Formatter, Result};
 pub const UNEXPECTED_TOKEN: &str = "unexpected token";
 pub const UNEXPECTED_BLOCK: &str = "unexpected block";
 pub const UNEXPECTED_EOF: &str = "unexpected eof";
-pub const INCOMPATIBLE_TYPES: &str = "incompatible types";
 pub const INVALID_SYNTAX: &str = "invalid syntax";
 pub const INVALID_FILTER: &str = "invalid filter";
+pub const INCOMPATIBLE_TYPES: &str = "incompatible types";
 
 /// An error type that provides a brief description of the error,
 /// and optionally supports adding more contextual "help" text and
@@ -45,12 +45,12 @@ pub const INVALID_FILTER: &str = "invalid filter";
 pub struct Error {
     /// Describes the cause of the [`Error`].
     reason: String,
-    /// The name of the Template that the [`Error`] comes from.
-    template: Option<String>,
     /// A visualization to help illustrate the [`Error`].
     visual: Option<Box<dyn Visual>>,
     /// Additional information to display with the [`Error`].
     help: Option<String>,
+    /// The name of the Template that the [`Error`] comes from.
+    pub(crate) template: Option<String>,
 }
 
 impl Error {
@@ -151,6 +151,11 @@ impl Error {
     {
         self.help = Some(text.into());
         self
+    }
+
+    /// Return true if the [`Template`] has a name.
+    pub fn is_named(&self) -> bool {
+        self.template.is_some()
     }
 }
 
