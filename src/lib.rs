@@ -310,7 +310,10 @@
 //! In this example, the "header" template only has access to a "name" variable.
 //!
 //! ```rust
-//! let mut engine = crate::default();
+//! use ban::Store;
+//! use ban::filter::serde::json;
+//!
+//! let mut engine = ban::default();
 //! engine
 //!     .add_template_must("header", "hello, (( name ))!")
 //!     .unwrap();
@@ -344,7 +347,6 @@ mod syntax;
 pub use compile::{compile, Template};
 pub use engine::Engine;
 pub use render::render;
-use serde_json::json;
 pub use store::Store;
 pub use syntax::Builder;
 
