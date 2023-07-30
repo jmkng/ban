@@ -1,52 +1,46 @@
-//! Contains the `Filter` trait and other types useful for creating and using filters.
+//! Contains the [`Filter`] trait and other types useful for creating and using
+//! filters.
 //!
-//! A filter is any type which implements the [`Filter`][`crate::filter::Filter`] trait.
-//! You can assign a filter to an [`Engine`][`crate::Engine`] with the
-//! [`add_filter`][`crate::Engine::add_filter()`] method, and it will be available in any
-//! [`Template`][`crate::Template`] rendered by that engine.
-//!
-//! Given this expression:
+//! A filter is any type that implements the [`Filter`] trait. You can add a
+//! filter to an [`Engine`][`crate::Engine`] with the
+//! [`.add_filter`][`crate::Engine::add_filter`] method, and it will be available
+//! in any [`Template`][`crate::Template`] rendered by that engine.
 //!
 //! ```html
-//! (( name | prepend 1: "hello, " | append "!" | upper ))
+//! (( name | prepend text: "hello, " | append "!" | upper ))
 //! ```
 //!
-//! The "name" value is not quoted, and so it is perceived to be an identifier and not a
-//! literal string. Upon rendering this expression, Ban will search the
-//! [`Store`][`crate::Store`] for "name" and use that value as the input for the first
-//! filter in the chain.
+//! Upon rendering this expression, Ban will search the [`Store`][`crate::Store`]
+//! for "name" and use that value as the input for the first filter in the chain.
 //!
-//! The pipe "|" denotes that the following identifier is the name of a filter.
-//! Ban will search for a filter with the name of "prepend" and execute it with whatever
-//! "name" evaluated to.
+//! The `prepend` filter receives one argument with a name of "text", and the value
+//! for that argument is "hello, ".
 //!
-//! One argument for "prepend" is seen here with a name of "1" and a value of
-//! "hello, ". This is an example of a named argument.
+//! It might be important to note, argument names may be quoted or unquoted, they
+//! are treated the same either way.
 //!
-//! The next filter, "append", is using an anonymous argument.
+//! The next filter, `append`, receives an anonymous argument with a value of "!".
 //!
-//! Anonymous arguments have no explicitly assigned name, but they do still receive an
-//! implicitly generated name. For each anonymous argument in a filter call, the name
-//! is equal to (n + 1) where "n" is the number of anonymous arguments that came before the
+//! Anonymous arguments have no explicitly assigned name, but they do still receive
+//! an implicitly generated name. For each anonymous argument to a filter, the name
+//! is equal to `n + 1` where "n" is the number of anonymous arguments that came
+//! before the argument.
+//!
+//! So, the "!" argument receives a name of "1" because it is the first anonymous
 //! argument.
-//!
-//! So, the "!" argument for the "append" filter will have a name of "1", because it is
-//! the first anonymous argument.
 //!
 //! # Examples
 //!
-//! Expressions such as "(( name ))" usually render data from the `Store`, but you can also pass
-//! in literal data like "hello". This isn't very interesting on its own, but becomes useful
-//! when you start using filters.
+//! Expressions such as `(( name ))` usually render data from the `Store`, but you
+//! can also pass in literal data like "hello". This isn't very interesting on its own,
+//! but becomes useful when you start using filters.
 //!
 //! We'll create a filter that allows us to access the
 //! [`to_lowercase`](https://doc.rust-lang.org/std/primitive.str.html#method.to_lowercase)
 //! function available in the standard library.
 //!
-//! You can either create a struct and implement the trait on that, or just create
-//! a function matching the trait signature. Ban will accept both.
-//!
-//! Here we use a function:
+//! You can either create a struct and implement the trait on it, or just create
+//! a function matching the trait signature:
 //!
 //! ```rust
 //! use ban::{

@@ -5,14 +5,15 @@
 //! and it tries to provide good error messages.
 //!
 //! # Features
-//! - Common logical expressions (`if`, `let`, and `for`).
-//! - Output expressions with user-defined filters.
+//! - Common logical constructs (`if`, `let`, and `for`).
+//! - User-defined filters to transform content.
 //!     - An optional standard library providing filters for common
-//!     functionality like HTML escaping.
+//!     functionality, like HTML escaping.
 //! - Multiple strategies for template inheritance.
 //!     - Block/extends - divide a template up into blocks that can be
 //!     overridden by child templates.
 //!     - Include - render another template at the specified location.
+//! - Custom delimiters.
 //!
 //! ```text
 //! 🦊 Note
@@ -26,20 +27,20 @@
 //! ## Usage
 //!
 //! Create a new [`Engine`][`crate::Engine`] with [`default`][`crate::default`],
-//! or if you want to use custom delimiters, create a `Syntax` with
-//! [`Builder`][`crate::Builder`] first and use the [`new`][`crate::Engine::new`]
-//! method instead.
+//! or if you want to use custom delimiters, use the [`Builder`][`crate::Builder`]
+//! type and the [`new`][`crate::Engine::new`] method.
 //!
 //! ```rust
 //! let engine = ban::default();
 //! ```
 //!
-//! The `Engine` type provides a place for you to register filters and store
-//! other templates that you can use with the `include` expression.
+//! The [`Engine`] type provides a place for you to register
+//! [`filters`][`crate::filter::Filter`] and store other
+//! [`templates`][`crate::Template`] that you can call with the `include` block.
 //!
 //! ## Compile
 //!
-//! Use the `Engine` to compile a [`Template`][`crate::Template`].
+//! Use the [`Engine`] to compile a [`Template`].
 //!
 //! ```rust
 //! let engine = ban::default();
@@ -48,11 +49,11 @@
 //!
 //! ## Create a Store
 //!
-//! The template we just compiled has a single expression that wants to render something
-//! called "name".
+//! The [`Template`] we just compiled has a single expression that wants to
+//! render something called "name".
 //!
-//! To render this, we will need to supply a [`Store`][`crate::Store`] instance that contains
-//! a value for that "name" key.
+//! To render this, we will need to supply a [`Store`] instance containing a value
+//! for that identifier.
 //!
 //! ```rust
 //! use ban::Store;
@@ -63,8 +64,8 @@
 //!
 //! ## Render
 //!
-//! Now that we have a `Store` containing the data our `Template` wants
-//! to use, we can tell the `Engine` to render it for us.
+//! Now that we have a [`Store`] containing the data our [`Template`] wants
+//! to use, we can tell the [`Engine`] to render it.
 //!
 //! ```rust
 //! use ban::Store;
@@ -79,9 +80,217 @@
 //! assert_eq!(result.unwrap(), "hello, taylor!");
 //! ```
 //!
+//! # Syntax
+//!
+//! Ban doesn't have a lot of complicated syntax to learn. It should be
+//! familiar if you've used any other template engine.
+//!
+//! This section provides an overview of expressions and the different
+//! blocks you can use.
+//!
+//! ## Expressions
+//!
+//! Expressions let you render content from the [`Store`], or literal values
+//! like strings and numbers. They look like this:
+//!
+//! ```text
+//! (( name ))
+//! ```
+//!
+//! Or, if you want to transform the "name" variable using filters:
+//!
+//! ```text
+//! (( name | to_lowercase | left 3 ))
+//! ```
+//!
+//! ## Filters
+//!
+//! [`Filters`][`crate::filter::Filter`] can be used in expressions to
+//! transform data.
+//!
+//! The input for the first filter comes from the value on the far left.
+//! It travels through each filter from left to right, and the output of
+//! the final filter in the chain is what gets rendered.
+//!
+//! Filters may accept any number of arguments, or none. They may be named
+//! or anonymous.
+//!
+//! Named arguments look like this:
+//!
+//! ```text
+//! (( name | tag name: "taylor" age: 25 ))
+//! ```
+//!
+//! Anonymous arguments work the same way, but have no explicit name:
+//!
+//! ```text
+//! (( name | tag "taylor" 25 ))
+//! ```
+//!
+//! See the [`filter`][`crate::filter`] module for more information.
+//!
+//! ## If
+//!
+//! If blocks allow conditional rendering based on a series of expressions.
+//!
+//! ```text
+//! (* if true *)
+//!     hello
+//! (* else if false *)
+//!     goodbye
+//! (* endif *)
+//! ```
+//!
+//! You can compare two values, or provide just one. If the value is truthy,
+//! the block will execute.
+//!
+//! ```text
+//! (* if 100 *)
+//!     hello
+//! (* endif *)
+//! ```
+//!
+//! Here's a cheatsheet for truthy values:
+//!
+//! Type    | Truthy When
+//! ------- | ----------------------------
+//! String  | String is not empty.
+//! Number  | Number is greater than zero.
+//! Array   | Array is not empty.
+//! Object  | Object is not empty.
+//! Boolean | Boolean is true.
+//!
+//! You can use the `not` keyword to negate:
+//!
+//! ```text
+//! (* if not false && 500 > 10 *)
+//!     hello
+//! (* endif *)
+//! ```
+//!
+//! You can view an if block as a tree, which may have one or more branches.
+//! Each branch may also have one or more leaves.
+//!
+//! The `||` and `&&` operators are used to divide branches and leaves respectively,
+//! similar to how they are used in many programming languages.
+//!
+//! For an if block to execute, it must have at least one branch where all leaves
+//! are truthy.
+//!
+//! ```text
+//!                                        |---| negated
+//! (* if this >= that && these == those || not is_admin *);
+//!       ------------    --------------    ------------
+//!          Leaf 1           Leaf 2            Leaf 1
+//!       ------------------------------    ------------
+//!                   Branch 1                 Branch 2
+//!       ----------------------------------------------
+//!                            Tree
+//! ```
+//!
+//! ## For
+//!
+//! For blocks allow iteration over a value.
+//!
+//! You can iterate over arrays, objects, and strings.
+//!
+//! ```text
+//! (* for item in inventory *)
+//!     Name: (( item.name ))
+//! (* endfor *)
+//! ```
+//!
+//! You can provide a single identifier as seen above, or two:
+//!
+//! ```text
+//! (* for i, item in inventory *)
+//!     Item number: (( i | add 1 )) // <-- Zero indexed, so add one!
+//!     Name: (( item.name ))
+//! (* endfor *)
+//! ```
+//!
+//! The values held by the identifiers depends on the type you are iterating
+//! on:
+//!
+//! Type   | Values for "i"                 | Values for "item"
+//! ------ | ------------------------------ | ----------------
+//! String | Indices of the characters.     | Characters of the string.
+//! Array  | Indices of the array elements. | Array elements.
+//! Object | Keys of the object pairs.      | Values of the object pairs.
+//!
+//! ## Let
+//!
+//! Let blocks allow assignment of a value to an identifier.
+//!
+//! ```text
+//! (* let name = "taylor" *)
+//! ```
+//!
+//! The left side of the expression must be an identifier, meaning an unquoted string,
+//! but the right side can be an identifier or literal value.
+//!
+//! Assignments made within a for block are scoped to the lifetime of that block:
+//!
+//! ```text
+//! (* for item in inventory *)
+//!     (* let name = item.name *)
+//!     Name: (( name ))
+//! (* endfor *)
+//!
+//! Last item name: (( name )). // <-- Error, "name" is not in scope!
+//! ```
+//!
+//! Assignments made outside of a loop are available globally:
+//!
+//! ```text
+//! (* if is_admin *)
+//!     (* let name = "admin" *)
+//! (* else *)
+//!     (* let name = user.name *)
+//! (* endif *)
+//!
+//! Hello, (( name )).
+//! ```
+//!
+//! ## Include
+//!
+//! Include blocks allow other templates to be called.
+//!
+//! ```text
+//! (* include header *)
+//! ```
+//!
+//! If you call another template as seen above, it will have access to the same store
+//! as the template that called it.
+//!
+//! You can pass arguments, similar to filters:
+//!
+//! ```text
+//! (* include header name: data.name *)
+//! ```
+//!
+//! When you pass arguments to an included template, it has access to those values
+//! and nothing else.
+//!
+//! ```rust
+//! use ban::{filter::serde::json, Store};
+//!
+//! let mut engine = ban::default();
+//! engine
+//!     .add_template_must("header", "hello, (( name ))!")
+//!     .unwrap();
+//!
+//! let result = engine.render(
+//!     &engine.compile(r#"(* include header name: data.name *)"#).unwrap(),
+//!     &Store::new().with_must("data", json!({"name": "taylor", "age": 25})),
+//! );
+//! assert_eq!(result.unwrap(), "hello, taylor!");
+//!```
+//!
 //! ## Working Without an Engine
 //!
-//! You don't have to create an `Engine` to compile and render, Ban exposes
+//! You don't have to create an [`Engine`] if you don't need to use
+//! [`filters`][`crate::filter::Filter`] or inheritance, Ban exposes
 //! [`compile`][`crate::compile()`] and [`render`][`crate::render()`] as a shortcut.
 //!
 //! ```rust
@@ -95,239 +304,6 @@
 //!
 //! assert_eq!(result.unwrap(), "hello, taylor!");
 //! ```
-//!
-//! However, because the `Engine` contains all of the `Filter` instances,
-//! working this way means that you will not have the ability to use
-//! custom filters.
-//!
-//! Another thing you might have noticed, the above example uses
-//! [`with_must`][`Store::with_must`] to insert data instead of
-//! [`insert_must`][`Store::insert_must`]. This method does the same thing,
-//! but provides a more fluent interface.
-//!
-//! # Syntax
-//!
-//! Ban doesn't have a lot of complicated syntax to learn. It should be
-//! familiar if you've used any other template engine.
-//!
-//! This section provides an overview of expressions, and the different
-//! blocks you can use.
-//!
-//! ## Expressions
-//!
-//! Expressions let you render content from the `Store`, or literal values
-//! such as strings and numbers. They look like this:
-//!
-//! ```html
-//! (( name | to_lowercase | left 3 ))
-//! ```
-//!
-//! You can use filters to transform content in expressions.
-//!
-//! The input for the first filter comes from the value on the far left.
-//! It travels through each filter from left to right, and the output of
-//! the final filter in the chain is what gets rendered.
-//!
-//! Filters may accept any number of arguments, or none. They may be named or anonymous.
-//!
-//! Named arguments look like this:
-//!
-//! ```html
-//! (( name | tag name: "taylor", age: 25 ))
-//! ```
-//!
-//! Anonymous arguments work the same way, but have no explicit name:
-//!
-//! ```html
-//! (( name | tag "taylor", 25 ))
-//! ```
-//!
-//! See the [`filter`][`crate::filter`] module for more information.
-//!
-//! ## If
-//!
-//! If blocks allow conditional rendering based on a series of expressions.
-//!
-//! In this example, none of the "branches" are found to be "truthy", so
-//! nothing gets rendered. The last branch *would* be considered "truthy",
-//! but it is negated with the `not` keyword.
-//!
-//! ```html
-//! (* if false || 10 > 500 || not true *)
-//!     hello
-//! (* endif *)
-//! ```
-//!
-//! You can also provide a single identifier or literal, and it will pass if it
-//! is truthy.
-//!
-//! ```html
-//! (* if 100 *)
-//!     hello
-//! (* endif *)
-//! ```
-//!
-//! An if block is represented by a "tree", which may have one or more "branches",
-//! and each branch may have one or more "checks".
-//!
-//! The "||" and "&&" operators are used to divide branches and checks respectively,
-//! similar to how they are used in many programming languages.
-//!
-//! By using "&&", you are declaring that you intend to write another check and that
-//! it should be associated with the same branch, while "||" begins a new branch.
-//!
-//! ```html
-//!                                        |---| negated
-//! (* if this >= that && these == those || not is_admin *);
-//!       ------------    --------------    ------------
-//!          Check 1         Check 2           Check 1
-//!       ------------------------------    ------------
-//!                  Branch 1                  Branch 2
-//!       ----------------------------------------------
-//!                            Tree
-//! ```
-//!
-//! If the block has at least one branch where all checks are truthy, it will pass.
-//!
-//! ## For
-//!
-//! For blocks allow you to iterate over data.
-//!
-//! ```html
-//! (* for item in inventory *)
-//!     (( item ))
-//! (* endfor *)
-//! ```
-//!
-//! You can iterate over arrays, objects and strings.
-//!
-//! Providing a single identifier before the "in" keyword will scope the value to the
-//! identifier, but you can also provide two identifiers separated by a comma:
-//!
-//! ```html
-//! (* for i, item in inventory *)
-//!     (( i )) - (( item ))
-//! (* endfor *)
-//! ```
-//!
-//! The value of the two identifiers will vary based on the type you are iterating on.
-//! Considering the above example, these rules apply:
-//!
-//! When "inventory" is..
-//!
-//! 1. Object:
-//!     - i: key
-//!     - item: value
-//! 2. Array:
-//!     - i: index
-//!     - item: value
-//! 3. String:
-//!     - i: index
-//!     - item: char
-//!
-//! ## Let
-//!
-//! Let blocks allow you to assign values to identifiers.
-//!
-//!
-//! ```html
-//! (* let name = "taylor" *)
-//! ```
-//!
-//! The left side of the expression expects an identifier, meaning an unquoted string,
-//! while the right side may be an identifier pointing to some value within the [`Store`],
-//! or literal data as seen in the example above.
-//!
-//! Assignments made within a for block will be scoped to the lifetime of that for block,
-//! while assignments made anywhere else are globally scoped.
-//!
-//! In this example, the "name" variable exists within the loop, but will not be found
-//! after it ends:
-//!
-//! ```html
-//! (* for item in inventory *)
-//!     (* let name = item.description.name *)
-//!     Item: (( name ))
-//! (* endfor *)
-//!
-//! Last item name: (( name )). // <-- error
-//! ```
-//!
-//! In this example, an if block is used to conditionally assign a variable that is
-//! available globally.
-//!
-//! ```html
-//! (* if is_admin *)
-//!     (* let name = "admin" *)
-//! (* else *)
-//!     (* let name = user.name *)
-//! (* endif *)
-//!
-//! Hello, (( name )).
-//! ```
-//!
-//! ## Include
-//!
-//! Include blocks allow you to render other registered templates.
-//!
-//! ```html
-//! (* include header *)
-//! ```
-//!
-//! In the above example, "header" is the name of a registered template.
-//! Quoted and unquoted strings are recognized here, but you will most likely want
-//! to use an unquoted string, unless you registered your template with a name that
-//! contains quotes.
-//!
-//! ```rust
-//! use ban::Store;
-//!
-//! let mut engine = ban::default();
-//! engine.add_template_must("header", "hello, there!").unwrap();
-//!
-//! let template = engine.compile(r#"(* include "header" *)"#).unwrap();
-//! let result = engine.render(&template, &Store::new());
-//! assert!(result.is_err());
-//!```
-//!
-//! The above example produces this error:
-//!
-//! ```html
-//! --> ?:1:12
-//!   |
-//! 1 | (* include "header" *)
-//!   |            ^^^^^^^^
-//!   |
-//! = help: try adding the template `"header"` to the engine with `.add_template` first,
-//! or you may want to remove the surrounding quotes
-//! ```
-//!
-//! To resolve this, you may either register your template with the string `"\"header\""`,
-//! or as the error suggests, remove the quotes from the include block.
-//!
-//! When an include block is used, the called template will have access to the same store
-//! data that the calling template does, unless you scope the data by providing arguments.
-//! In this example, the "header" template only has access to a "name" variable.
-//!
-//! ```rust
-//! use ban::Store;
-//! use ban::filter::serde::json;
-//!
-//! let mut engine = ban::default();
-//! engine
-//!     .add_template_must("header", "hello, (( name ))!")
-//!     .unwrap();
-//!
-//! let template = engine
-//!     .compile(r#"(* include header name: data.name *)"#)
-//!     .unwrap();
-//!
-//! let result = engine.render(
-//!     &template,
-//!     &Store::new().with_must("data", json!({"name": "taylor", "age": 25})),
-//! );
-//! assert_eq!(result.unwrap(), "hello, taylor!");
-//!```
 #![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
 #![warn(clippy::missing_docs)]
