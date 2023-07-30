@@ -188,6 +188,21 @@
 //!                            Tree
 //! ```
 //!
+//! ### Examples
+//!
+//! ```rust
+//! use ban::{Store};
+//! let mut engine = ban::default();
+//!
+//! let template = engine.compile("(* if first > second *)hello(* else *)goodbye(* endif *)");
+//! let store = Store::new()
+//!     .with_must("first", 100)
+//!     .with_must("second", 10);
+//!
+//! let result = engine.render(&template.unwrap(), &store);
+//! assert_eq!(result.unwrap(), "hello");
+//!```
+//!
 //! ## For
 //!
 //! For blocks allow iteration over a value.
@@ -212,11 +227,25 @@
 //! The values held by the identifiers depends on the type you are iterating
 //! on:
 //!
-//! Type   | Values for "i"                 | Values for "item"
-//! ------ | ------------------------------ | ----------------
-//! String | Indices of the characters.     | Characters of the string.
-//! Array  | Indices of the array elements. | Array elements.
-//! Object | Keys of the object pairs.      | Values of the object pairs.
+//! Type   | Value for `i`       | Value for `item`
+//! ------ | ------------------- | ----------------
+//! String | Index of character. | Character of string.
+//! Array  | Index of element.   | Element of array.
+//! Object | Object key.         | Object value.
+//!
+//! ### Examples
+//!
+//! ```rust
+//! use ban::{filter::serde::json, Store};
+//! let mut engine = ban::default();
+//!
+//! let template = engine.compile("(* for item in inventory *)(( item )), (* endfor *)");
+//! let store = Store::new()
+//!     .with_must("inventory", json!(["sword", "shield"]));
+//!
+//! let result = engine.render(&template.unwrap(), &store);
+//! assert_eq!(result.unwrap(), "sword, shield, ");
+//!```
 //!
 //! ## Let
 //!
@@ -252,6 +281,17 @@
 //! Hello, (( name )).
 //! ```
 //!
+//! ### Examples
+//!
+//! ```rust
+//! use ban::Store;
+//! let mut engine = ban::default();
+//!
+//! let template = engine.compile("hello, (* let name = \"taylor\" -*) (( name ))!");
+//! let result = engine.render(&template.unwrap(), &Store::new());
+//! assert_eq!(result.unwrap(), "hello, taylor!");
+//!```
+//!
 //! ## Include
 //!
 //! Include blocks allow other templates to be called.
@@ -272,6 +312,8 @@
 //! When you pass arguments to an included template, it has access to those values
 //! and nothing else.
 //!
+//! ### Examples
+//!
 //! ```rust
 //! use ban::{filter::serde::json, Store};
 //!
@@ -280,8 +322,10 @@
 //!     .add_template_must("header", "hello, (( name ))!")
 //!     .unwrap();
 //!
+//! let template = engine.compile(r#"(* include header name: data.name *)"#).unwrap();
+//!
 //! let result = engine.render(
-//!     &engine.compile(r#"(* include header name: data.name *)"#).unwrap(),
+//!     &template,
 //!     &Store::new().with_must("data", json!({"name": "taylor", "age": 25})),
 //! );
 //! assert_eq!(result.unwrap(), "hello, taylor!");
