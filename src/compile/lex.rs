@@ -293,15 +293,13 @@ impl<'source> Lexer<'source> {
                 "not" => Token::Keyword(Keyword::Not),
                 "if" => Token::Keyword(Keyword::If),
                 "else" => Token::Keyword(Keyword::Else),
-                "endif" => Token::Keyword(Keyword::EndIf),
                 "let" => Token::Keyword(Keyword::Let),
                 "for" => Token::Keyword(Keyword::For),
                 "in" => Token::Keyword(Keyword::In),
-                "endfor" => Token::Keyword(Keyword::EndFor),
                 "include" => Token::Keyword(Keyword::Include),
                 "extends" => Token::Keyword(Keyword::Extends),
                 "block" => Token::Keyword(Keyword::Block),
-                "endblock" => Token::Keyword(Keyword::EndBlock),
+                "end" => Token::Keyword(Keyword::End),
                 "true" => Token::True,
                 "false" => Token::False,
                 _ => Token::Identifier,
@@ -523,15 +521,6 @@ mod tests {
     }
 
     #[test]
-    fn bonkers() {
-        let mut lexer = Lexer::new("(( 3 ))");
-        for _ in 0..3 {
-            let next = lexer.next();
-            println!("{:?}", next)
-        }
-    }
-
-    #[test]
     fn test_lex_full_document() {
         // Reading the file this way should strip any \r\n line endings and replace
         // them with \n, so the test should pass on Windows.
@@ -562,34 +551,34 @@ mod tests {
             (Token::EndExpression, 262..264),
             (Token::Raw, 264..269),
             (Token::BeginBlock, 269..271),
-            (Token::Keyword(Keyword::EndFor), 272..278),
-            (Token::EndBlock, 279..281),
-            (Token::Raw, 281..287),
-            (Token::BeginBlock, 287..289),
-            (Token::Keyword(Keyword::If), 290..292),
-            (Token::Identifier, 293..297),
-            (Token::Operator(Operator::Equal), 298..300),
-            (Token::String, 301..309),
-            (Token::EndBlock, 310..312),
-            (Token::Raw, 312..347),
-            (Token::BeginBlock, 347..349),
-            (Token::Keyword(Keyword::EndIf), 350..355),
-            (Token::EndBlock, 356..358),
-            (Token::Raw, 358..364),
-            (Token::BeginExpression, 364..366),
-            (Token::Identifier, 367..371),
-            (Token::Pipe, 372..373),
-            (Token::Identifier, 374..381),
-            (Token::Number, 382..383),
-            (Token::Colon, 383..384),
-            (Token::String, 385..394),
-            (Token::Pipe, 395..396),
-            (Token::Identifier, 397..403),
-            (Token::String, 404..407),
-            (Token::Pipe, 408..409),
-            (Token::Identifier, 410..415),
-            (Token::EndExpression, 416..418),
-            (Token::Raw, 418..434),
+            (Token::Keyword(Keyword::End), 272..275),
+            (Token::EndBlock, 276..278),
+            (Token::Raw, 278..284),
+            (Token::BeginBlock, 284..286),
+            (Token::Keyword(Keyword::If), 287..289),
+            (Token::Identifier, 290..294),
+            (Token::Operator(Operator::Equal), 295..297),
+            (Token::String, 298..306),
+            (Token::EndBlock, 307..309),
+            (Token::Raw, 309..344),
+            (Token::BeginBlock, 344..346),
+            (Token::Keyword(Keyword::End), 347..350),
+            (Token::EndBlock, 351..353),
+            (Token::Raw, 353..359),
+            (Token::BeginExpression, 359..361),
+            (Token::Identifier, 362..366),
+            (Token::Pipe, 367..368),
+            (Token::Identifier, 369..376),
+            (Token::Number, 377..378),
+            (Token::Colon, 378..379),
+            (Token::String, 380..389),
+            (Token::Pipe, 390..391),
+            (Token::Identifier, 392..398),
+            (Token::String, 399..402),
+            (Token::Pipe, 403..404),
+            (Token::Identifier, 405..410),
+            (Token::EndExpression, 411..413),
+            (Token::Raw, 413..429),
         ];
 
         helper_lex_next_auto(&source, expect)

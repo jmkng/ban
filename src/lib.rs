@@ -138,7 +138,7 @@
 //!     hello
 //! (* else if false *)
 //!     goodbye
-//! (* endif *)
+//! (* end *)
 //! ```
 //!
 //! You can compare two values, or provide just one. If the value is truthy,
@@ -147,7 +147,7 @@
 //! ```text
 //! (* if 100 *)
 //!     hello
-//! (* endif *)
+//! (* end *)
 //! ```
 //!
 //! Here's a cheatsheet for truthy values:
@@ -165,7 +165,7 @@
 //! ```text
 //! (* if not false && 500 > 10 *)
 //!     hello
-//! (* endif *)
+//! (* end *)
 //! ```
 //!
 //! You can view an if block as a tree, which may have one or more branches.
@@ -194,7 +194,7 @@
 //! use ban::{Store};
 //! let mut engine = ban::default();
 //!
-//! let template = engine.compile("(* if first > second *)hello(* else *)goodbye(* endif *)");
+//! let template = engine.compile("(* if first > second *)hello(* else *)goodbye(* end *)");
 //! let store = Store::new()
 //!     .with_must("first", 100)
 //!     .with_must("second", 10);
@@ -212,7 +212,7 @@
 //! ```text
 //! (* for item in inventory *)
 //!     Name: (( item.name ))
-//! (* endfor *)
+//! (* end *)
 //! ```
 //!
 //! You can provide a single identifier as seen above, or two:
@@ -221,7 +221,7 @@
 //! (* for i, item in inventory *)
 //!     Item number: (( i | add 1 )) // <-- Zero indexed, so add one!
 //!     Name: (( item.name ))
-//! (* endfor *)
+//! (* end *)
 //! ```
 //!
 //! The values held by the identifiers depends on the type you are iterating
@@ -239,7 +239,7 @@
 //! use ban::{filter::serde::json, Store};
 //! let mut engine = ban::default();
 //!
-//! let template = engine.compile("(* for item in inventory *)(( item )), (* endfor *)");
+//! let template = engine.compile("(* for item in inventory *)(( item )), (* end *)");
 //! let store = Store::new()
 //!     .with_must("inventory", json!(["sword", "shield"]));
 //!
@@ -264,7 +264,7 @@
 //! (* for item in inventory *)
 //!     (* let name = item.name *)
 //!     Name: (( name ))
-//! (* endfor *)
+//! (* end *)
 //!
 //! Last item name: (( name )). // <-- Error, "name" is not in scope!
 //! ```
@@ -276,7 +276,7 @@
 //!     (* let name = "admin" *)
 //! (* else *)
 //!     (* let name = user.name *)
-//! (* endif *)
+//! (* end *)
 //!
 //! Hello, (( name )).
 //! ```

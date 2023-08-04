@@ -4,8 +4,8 @@ use self::compare::{compare_values, is_truthy};
 use crate::{
     compile::{
         tree::{
-            Arguments, Base, Block, Call, CheckBranch, Expression, Extends, Identifier, If,
-            Include, Iterable, Let, Output, Set, Tree,
+            Arguments, Base, Block, Call, CheckBranch, Expression, Extends, For, Identifier, If,
+            Include, Let, Output, Set, Tree,
         },
         Scope, Template,
     },
@@ -233,27 +233,27 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// Returns an [`Error`] when rendering a [`Tree`] within the [`Scope`] fails,
     /// or the [`Base`] is not found in the [`Store`].
-    fn render_for(&mut self, iterable: &'source Iterable, pipe: &mut Pipe) -> Result<(), Error> {
+    fn render_for(&mut self, fo: &'source For, pipe: &mut Pipe) -> Result<(), Error> {
         self.shadow.push();
 
-        let value = self.evaluate_base(&iterable.base)?;
+        let value = self.evaluate_base(&fo.base)?;
         match value.as_ref() {
             Value::String(st) => {
                 for (index, char) in st.to_owned().char_indices() {
-                    self.shadow_set(&iterable.set, (Some(index), char))?;
-                    self.render_scope(&iterable.scope, pipe)?;
+                    self.shadow_set(&fo.set, (Some(index), char))?;
+                    self.render_scope(&fo.scope, pipe)?;
                 }
             }
             Value::Array(ar) => {
                 for (index, value) in ar.to_owned().iter().enumerate() {
-                    self.shadow_set(&iterable.set, (Some(index), value))?;
-                    self.render_scope(&iterable.scope, pipe)?;
+                    self.shadow_set(&fo.set, (Some(index), value))?;
+                    self.render_scope(&fo.scope, pipe)?;
                 }
             }
             Value::Object(ob) => {
                 for (key, value) in ob.to_owned().iter() {
-                    self.shadow_set(&iterable.set, (Some(key), value))?;
-                    self.render_scope(&iterable.scope, pipe)?;
+                    self.shadow_set(&fo.set, (Some(key), value))?;
+                    self.render_scope(&fo.scope, pipe)?;
                 }
             }
             incompatible => {
@@ -613,7 +613,7 @@ mod tests {
                 c\
             (* else *)\
                 d\
-            (* endif *)",
+            (* end *)",
         );
         let store = Store::new().with_must("left", 101).with_must("name", "");
 
@@ -627,8 +627,8 @@ mod tests {
                 first loop: (( value )) \
                 (* for value in second *)\
                     second loop: (( value )) \
-                (* endfor *)\
-            (* endfor *)",
+                (* end *)\
+            (* end *)",
         );
         let store = Store::new()
             .with_must("first", "ab")
@@ -646,7 +646,7 @@ mod tests {
         let (template, engine) = get_template_with_engine(
             "(* for index, value in data *)\
                 (( index )) - (( value )) \
-            (* endfor *)",
+            (* end *)",
         );
         let store = Store::new().with_must("data", json!(["one", "two"]));
 
@@ -661,7 +661,7 @@ mod tests {
         let (template, engine) = get_template_with_engine(
             "(* for key, value in data *)\
                 (( key )) - (( value ))\
-            (* endfor *)",
+            (* end *)",
         );
         let store = Store::new().with_must("data", json!({"one": "two"}));
 
@@ -673,7 +673,7 @@ mod tests {
         let (template, engine) = get_template_with_engine(
             "(* for value in data *)\
                 (( value ))\
-            (* endfor *)",
+            (* end *)",
         );
         let store = Store::new().with_must("data", json!({"one": "two"}));
 
@@ -687,7 +687,7 @@ mod tests {
                 (* let name = \"admin\" *)\
             (* else *)\
                 (* let name = user.name *)\
-            (* endif *)\
+            (* end *)\
             Hello, (( name )).",
         );
         let store = Store::new()
@@ -703,7 +703,7 @@ mod tests {
             "(* for item in inventory *)\
                 (* let name = item.description.name *)\
                 Item: (( name ))\
-            (* endfor *)\
+            (* end *)\
             Last item name: (( name )).",
         );
         let store =
@@ -735,7 +735,7 @@ mod tests {
     fn test_extend() {
         let mut engine = Engine::default();
         engine
-            .add_template_must("first", "hello, (* block name *)(* endblock *)!")
+            .add_template_must("first", "hello, (* block name *)(* end *)!")
             .unwrap();
         engine
             .add_template_must(
@@ -743,7 +743,7 @@ mod tests {
                 "(* extends first *)\
                 (* block name *)\
                 (( name ))\
-                (* endblock *)",
+                (* end *)",
             )
             .unwrap();
         let store = Store::new().with_must("name", "taylor");

@@ -3,19 +3,15 @@ use crate::compile::tree::{CheckTree, Set};
 use std::fmt::Display;
 
 /// Represents a fragment of a larger expression.
-pub enum Block {
+pub enum Fragment {
     /// The first part of an "if" block, containing a [`CheckTree`].
     If(CheckTree),
     /// An additional [`CheckTree`] provided to a parent "if" block.
     ElseIf(CheckTree),
     /// A default value for a parent "if" block.
     Else,
-    /// The `(* endif *)` of an "if" Block.
-    EndIf,
     /// The `(* for n in t *)` of a "for" Block.
     For(Set, Base),
-    /// The `(* endfor *)` of a "for" Block.
-    EndFor,
     /// An assignment block - `(* let this = that *)`.
     Let(Identifier, Base),
     /// An include block - `(* include base *)`.
@@ -25,23 +21,21 @@ pub enum Block {
     /// TODO
     Block(Base),
     /// TODO
-    EndBlock,
+    End,
 }
 
-impl Display for Block {
+impl Display for Fragment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Block::If(_) => write!(f, "if"),
-            Block::ElseIf(_) => write!(f, "else if"),
-            Block::Else => write!(f, "else"),
-            Block::EndIf => write!(f, "endif"),
-            Block::For(_, _) => write!(f, "for"),
-            Block::EndFor => write!(f, "endor"),
-            Block::Let(_, _) => write!(f, "let"),
-            Block::Include(_, _) => write!(f, "include"),
-            Block::Extends(_) => write!(f, "extends"),
-            Block::Block(_) => write!(f, "block"),
-            Block::EndBlock => write!(f, "endblock"),
+            Fragment::If(_) => write!(f, "if"),
+            Fragment::ElseIf(_) => write!(f, "else if"),
+            Fragment::Else => write!(f, "else"),
+            Fragment::For(_, _) => write!(f, "for"),
+            Fragment::Let(_, _) => write!(f, "let"),
+            Fragment::Include(_, _) => write!(f, "include"),
+            Fragment::Extends(_) => write!(f, "extends"),
+            Fragment::Block(_) => write!(f, "block"),
+            Fragment::End => write!(f, "end"),
         }
     }
 }

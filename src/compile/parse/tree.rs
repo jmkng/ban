@@ -16,7 +16,7 @@ pub enum Tree {
     /// An if or else if block.
     If(If),
     /// A for loop.
-    For(Iterable),
+    For(For),
     /// Variable assignment.
     Let(Let),
     /// Template block.
@@ -258,6 +258,8 @@ pub struct Call {
     /// The source of the input data.
     pub receiver: Box<Expression>,
     /// The location of the [`Call`].
+    ///
+    /// This `Region` points to the `Call` itself, and all calls "above" it.
     pub region: Region,
 }
 
@@ -340,7 +342,7 @@ pub struct If {
 
 /// Loop rendering block.
 #[derive(Debug, Clone)]
-pub struct Iterable {
+pub struct For {
     /// Faux variables that contain the assignment for each iteration.
     pub set: Set,
     /// The [`Base`] to be iterated on.

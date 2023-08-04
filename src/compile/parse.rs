@@ -1,14 +1,14 @@
 pub mod scope;
 pub mod tree;
 
-mod block;
+mod fragment;
 mod state;
 
 use crate::{
     compile::{
         lex::{token::Token, LexResult, LexResultMust, Lexer},
         parse::{
-            block::Block,
+            fragment::Fragment,
             state::{BlockState, CheckState},
             tree::*,
         },
@@ -65,9 +65,8 @@ impl<'source> Parser<'source> {
         // Additional scopes are pushed when blocks like "if" and "for" are started,
         // in order to capture the body of those blocks.
         //
-        // When a closing block such as "endif" or "endfor" is seen, the scopes are
-        // popped off and used to create an appropriate [`Tree`] instance that is
-        // then pushed to the first `Scope`.
+        // When a block is closed with "end", the scopes are popped off and used to create an appropriate
+        // [`Tree`] instance to push to the first `Scope`.
         let mut scopes: Vec<Scope> = vec![Scope::new()];
 
         while let Some(next) = self.next()? {
@@ -94,16 +93,16 @@ impl<'source> Parser<'source> {
                 //
                 // KEYWORD ...
                 (Token::BeginBlock, region) => {
-                    let block = self.parse_block()?;
+                    let fragment = self.parse_fragment()?;
                     let end = self.next_must(Token::EndBlock)?.1.combine(region);
 
-                    match block {
+                    match fragment {
                         // Beginning of an "if" block.
                         //
                         // Expected:
                         //
-                        // [ELSEIF ...] | [ELSE] | ENDIF ...
-                        Block::If(tr) => {
+                        // [ELSE IF ...] | [ELSE] | END ...
+                        Fragment::If(tr) => {
                             states.push(BlockState::If {
                                 else_if: false,
                                 tree: tr,
@@ -113,12 +112,12 @@ impl<'source> Parser<'source> {
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // The "else if" fragment of an "if" block.
+                        // An "else if" fragment of an "if" block.
                         //
                         // Expected:
                         //
-                        // [ELSEIF ...] | [ELSE] | ENDIF ...
-                        Block::ElseIf(tr) => {
+                        // [ELSE IF ...] | [ELSE] | END ...
+                        Fragment::ElseIf(tr) => {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
                                     .pointer(self.lexer.source, end)
@@ -144,12 +143,12 @@ impl<'source> Parser<'source> {
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // The "else" fragment of an "if" block.
+                        // An "else" fragment of an "if" block.
                         //
                         // Expected:
                         //
-                        // ENDIF ...
-                        Block::Else => {
+                        // END ...
+                        Fragment::Else => {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
                                     .pointer(self.lexer.source, end)
@@ -167,100 +166,34 @@ impl<'source> Parser<'source> {
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // End of an "if" block.
-                        //
-                        // Expected:
-                        //
-                        // ...
-                        Block::EndIf => {
-                            let error = || {
-                                Error::build(UNEXPECTED_BLOCK)
-                                    .pointer(self.lexer.source, end)
-                                    .help("expected `if` before `endif`")
-                            };
-
-                            loop {
-                                match states.pop().ok_or_else(error)? {
-                                    BlockState::If {
-                                        else_if,
-                                        tree,
-                                        has_else,
-                                        region,
-                                        ..
-                                    } => {
-                                        let else_branch = has_else.then(|| scopes.pop().unwrap());
-                                        let then_branch = scopes.pop().unwrap();
-
-                                        let tree = Tree::If(If {
-                                            tree,
-                                            then_branch,
-                                            else_branch,
-                                            region: end.combine(region),
-                                        });
-                                        if !else_if {
-                                            break tree;
-                                        }
-                                        scopes.last_mut().unwrap().data.push(tree);
-                                    }
-                                    _ => return Err(error()),
-                                }
-                            }
-                        }
                         // Beginning of an "for" block.
                         //
                         // Expected:
                         //
-                        // BASE [,] [BASE] IN BASE ENDFOR ...
-                        Block::For(set, base) => {
+                        // BASE [,] [BASE] IN BASE END ...
+                        Fragment::For(set, base) => {
                             states.push(BlockState::For { set, base, region });
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // End of a "for" block.
-                        //
-                        // Expected:
-                        //
-                        // ...
-                        Block::EndFor => {
-                            let error = || {
-                                Error::build(UNEXPECTED_BLOCK)
-                                    .pointer(self.lexer.source, end)
-                                    .help("expected `for` before `endfor`")
-                            };
-
-                            let tree = match states.pop().ok_or_else(error)? {
-                                BlockState::For { set, base, .. } => {
-                                    let scope = scopes.pop().unwrap();
-                                    Tree::For(Iterable {
-                                        set,
-                                        base,
-                                        scope,
-                                        region,
-                                    })
-                                }
-                                _ => return Err(error()),
-                            };
-
-                            tree
-                        }
-                        // A "let" block.
+                        // A "let" expression.
                         //
                         // Expected:
                         //
                         // BASE ASSIGN BASE ...
-                        Block::Let(left, right) => Tree::Let(Let { left, right }),
-                        // An "include" block.
+                        Fragment::Let(left, right) => Tree::Let(Let { left, right }),
+                        // An "include" expression.
                         //
                         // Expected:
                         //
                         // BASE [BASE] ...
-                        Block::Include(name, mount) => Tree::Include(Include { name, mount }),
-                        // An "extends" block.
+                        Fragment::Include(name, mount) => Tree::Include(Include { name, mount }),
+                        // An "extends" expression.
                         //
                         // Expected:
                         //
                         // ...
-                        Block::Extends(name) => {
+                        Fragment::Extends(name) => {
                             if scopes.len() != 1 || !scopes.first().unwrap().data.is_empty() {
                                 return Err(Error::build(UNEXPECTED_BLOCK)
                                     .pointer(&self.lexer.source, end)
@@ -274,37 +207,82 @@ impl<'source> Parser<'source> {
                         //
                         // Expected:
                         //
-                        // ENDBLOCK ...
-                        Block::Block(name) => {
+                        // END ...
+                        Fragment::Block(name) => {
                             states.push(BlockState::Block { name, region: end });
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // An "endblock" block.
+                        // An "end" expression.
                         //
                         // Expected:
                         //
                         // ...
-                        Block::EndBlock => {
-                            let error = || {
-                                Error::build(UNEXPECTED_BLOCK)
-                                    .pointer(self.lexer.source, end)
-                                    .help("expected `block` before `endblock`")
-                            };
+                        Fragment::End => {
+                            match states.last() {
+                                Some(parent) => match parent {
+                                    // TODO
+                                    BlockState::If { .. } => loop {
+                                        match states.pop().ok_or_else(|| Error::build(INVALID_SYNTAX)
+                                                .pointer(self.lexer.source, end)
+                                                .help("`if` block does not appear to have a beginning"))? {
+                                            BlockState::If {
+                                                else_if,
+                                                tree,
+                                                region,
+                                                has_else,
+                                            } => {
+                                                let else_branch = has_else.then(|| scopes.pop().unwrap());
+                                                let then_branch = scopes.pop().unwrap();
 
-                            let previous = states.pop().ok_or_else(error)?;
-                            match previous {
-                                BlockState::Block { name, region } => Tree::Block(tree::Block {
-                                    name,
-                                    scope: scopes.pop().unwrap(),
-                                    region: end.combine(region),
-                                }),
-                                _ => return Err(error()),
+                                                let tree = Tree::If(If {
+                                                    tree,
+                                                    else_branch,
+                                                    then_branch,
+                                                    region: end.combine(region),
+                                                });
+                                                if !else_if {
+                                                    break tree;
+                                                }
+
+                                                scopes.last_mut().unwrap().data.push(tree);
+                                            }
+                                            _ => return Err(Error::build(INVALID_SYNTAX)
+                                                .pointer(self.lexer.source, end)
+                                                .help("expected `if` expressions above this point, \
+                                                    did you attempt to start a different block before closing this `if`?")),
+                                        }
+                                    },
+                                    // TODO
+                                    BlockState::For { .. } => match states.pop().unwrap() {
+                                        BlockState::For { set, base, region } => Tree::For(For {
+                                            set,
+                                            base,
+                                            scope: scopes.pop().unwrap(),
+                                            region: end.combine(region),
+                                        }),
+                                        _ => unreachable!(),
+                                    },
+                                    // TODO
+                                    BlockState::Block { .. } => match states.pop().unwrap() {
+                                        BlockState::Block { name, region } => Tree::Block(Block {
+                                            name,
+                                            scope: scopes.pop().unwrap(),
+                                            region: end.combine(region),
+                                        }),
+                                        _ => unreachable!(),
+                                    },
+                                },
+                                None => {
+                                    return Err(Error::build(
+                                        "unexpected `end` expression, you must begin a `block`, \
+                                    `for` or `if` first.",
+                                    ))
+                                }
                             }
                         }
                     }
                 }
-                //
                 _ => unreachable!("lexer will abort without begin block"),
             };
 
@@ -312,14 +290,14 @@ impl<'source> Parser<'source> {
         }
 
         if let Some(block) = states.first() {
-            let (block, close, region) = match block {
-                BlockState::If { region, .. } => ("if", "endif", region),
-                BlockState::For { region, .. } => ("for", "endfor", region),
-                BlockState::Block { region, .. } => ("block", "endblock", region),
+            let (block, region) = match block {
+                BlockState::If { region, .. } => ("if", region),
+                BlockState::For { region, .. } => ("for", region),
+                BlockState::Block { region, .. } => ("block", region),
             };
             return Err(Error::build(INVALID_SYNTAX)
                 .pointer(self.lexer.source, *region)
-                .help(format!("did you close the `{block}` with `{close}`?")));
+                .help(format!("did you close the `{block}` with `end`?")));
         }
 
         assert!(scopes.len() == 1, "must have single scope");
@@ -331,62 +309,65 @@ impl<'source> Parser<'source> {
         })
     }
 
-    /// Parse a [`Block`].
+    /// Parse a [`Fragment`].
     ///
-    /// A `Block` is a call to evaluate some kind of expression which may have
-    /// side effects on the [`Shadow`][`crate::store::Shadow`] data.
-    fn parse_block(&mut self) -> Result<Block, Error> {
-        //   from
-        //   |
+    /// A `Fragment` may encompass an entire expression, such as the "extends" expression,
+    /// or may represent a smaller part of a larger block.
+    fn parse_fragment(&mut self) -> Result<Fragment, Error> {
+        //   from                to
+        //   |                   |
         // (* if name == "taylor" *)
-        //   Welcome back, Taylor.
-        // (* endfor *)
-        //          |
-        //          to
         let (keyword, region) = self.parse_keyword()?;
 
         match keyword {
+            // TODO
             Keyword::If => {
                 let tree = self.parse_tree()?;
-                Ok(Block::If(tree))
+                Ok(Fragment::If(tree))
             }
+            // TODO
             Keyword::Else => {
                 if self.peek_is(Token::Keyword(Keyword::If))? {
                     self.next_must(Token::Keyword(Keyword::If))?;
                     let tree = self.parse_tree()?;
-                    Ok(Block::ElseIf(tree))
+                    Ok(Fragment::ElseIf(tree))
                 } else {
-                    Ok(Block::Else)
+                    Ok(Fragment::Else)
                 }
             }
-            Keyword::EndIf => Ok(Block::EndIf),
+            // TODO
             Keyword::For => {
                 let variables = self.parse_set()?;
                 self.next_must(Token::Keyword(Keyword::In))?;
                 let base = self.parse_base()?;
-                Ok(Block::For(variables, base))
+                Ok(Fragment::For(variables, base))
             }
-            Keyword::EndFor => Ok(Block::EndFor),
+            // TODO
             Keyword::Let => {
                 let left = self.parse_identifier()?;
                 self.next_must(Token::Assign)?;
                 let right = self.parse_base()?;
-                Ok(Block::Let(left, right))
+                Ok(Fragment::Let(left, right))
             }
+            // TODO
             Keyword::Include => {
                 let name = self.parse_base()?;
                 let scope = self.parse_mount()?;
-                Ok(Block::Include(name, scope))
+                Ok(Fragment::Include(name, scope))
             }
+            // TODO
             Keyword::Extends => {
                 let name = self.parse_base()?;
-                Ok(Block::Extends(name))
+                Ok(Fragment::Extends(name))
             }
+            // TODO
             Keyword::Block => {
                 let name = self.parse_base()?;
-                Ok(Block::Block(name))
+                Ok(Fragment::Block(name))
             }
-            Keyword::EndBlock => Ok(Block::EndBlock),
+            // TODO
+            Keyword::End => Ok(Fragment::End),
+            // TODO
             k @ Keyword::Not | k @ Keyword::In => Err(Error::build(UNEXPECTED_TOKEN)
                 .pointer(self.lexer.source, region)
                 .help(format!("keyword `{k}` is not valid in this position"))),
@@ -473,7 +454,7 @@ impl<'source> Parser<'source> {
     /// to determine if the block should pass.
     fn parse_tree(&mut self) -> Result<CheckTree, Error> {
         // this >= that && these == those || a == b *)
-        // |-----------    --------------    ------|
+        // ------------    --------------    ------
         // from  |                  |            |  to
         //       negatable          negatable    negatable
         let mut tree = CheckTree::new();
@@ -592,8 +573,8 @@ impl<'source> Parser<'source> {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
             (token, region) => Err(Error::build(UNEXPECTED_TOKEN)
                 .help(format!(
-                    "expected keyword like `if`, `else`, `endif`, `let`, `for`, `in`, `endfor`, `include`, \
-                    `extends`, `block`, `endblock`, found `{token}`"
+                    "expected keyword like `if`, `else`, `let`, `for`, `in`, `include`, \
+                    `extends`, `block`, `end`, found `{token}`"
                 ))
                 .pointer(self.lexer.source, region)),
         }
@@ -615,6 +596,10 @@ impl<'source> Parser<'source> {
 
         while !self.peek_is(Token::Pipe)? && !self.peek_is(Token::EndExpression)? {
             values.push(self.parse_argument()?);
+            if !self.peek_is(Token::Comma)? {
+                break;
+            }
+            self.next_must(Token::Comma)?;
         }
         if values.is_empty() {
             return Ok(None);
@@ -725,7 +710,6 @@ impl<'source> Parser<'source> {
             (Token::Identifier, region) => {
                 let mut path = vec![Identifier { region }];
 
-                // Keep chaining keys as long as we see a period.
                 while self.peek_is(Token::Period)? {
                     self.next_must(Token::Period)?;
                     path.push(self.parse_key()?);
@@ -926,7 +910,10 @@ impl<'source> Parser<'source> {
 
 #[cfg(test)]
 mod tests {
-    use super::{tree::Tree, Parser};
+    use super::{
+        tree::{Expression, Tree},
+        Parser,
+    };
     use crate::compile::{lex::token::Token, tree::Set};
 
     #[test]
@@ -938,11 +925,40 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_full_expression() {
-        let source = "hello (( name | prepend text: \"hello, \" | append \"!\" \"?\" | upper ))";
-        let result = Parser::new(source).compile(None);
+    fn test_parse_expression_with_call() {
+        let source = r#"hello (( name | prepend text: "hello, " | append "!" "?" | upper ))"#;
+        let template = Parser::new(source).compile(None).unwrap();
 
-        assert!(result.is_ok());
+        let mut iterator = template.scope.data.iter();
+        iterator.next();
+
+        match iterator.next().unwrap() {
+            Tree::Output(output) => match &output.expression {
+                Expression::Call(call) => {
+                    assert_eq!(call.name.region.literal(source), "upper");
+
+                    match call.receiver.as_ref() {
+                        Expression::Call(call) => {
+                            let arguments = call.arguments.as_ref().unwrap();
+                            let first = arguments.values.first().unwrap();
+                            let second = arguments.values.last().unwrap();
+
+                            assert_eq!(call.name.region.literal(source), "append");
+                            assert_eq!(
+                                call.region.literal(source),
+                                r#"name | prepend text: "hello, " | append "!", "?""#
+                            );
+                            assert_eq!(first.get_region().literal(source), r#""!""#);
+                            assert_eq!(second.get_region().literal(source), r#""?""#);
+                            assert_eq!(arguments.region.literal(source), r#""!", "?""#)
+                        }
+                        _ => panic!("filter `upper` does not lead to call type expression"),
+                    }
+                }
+                _ => panic!("expected `upper` to be call type expression"),
+            },
+            _ => panic!("expected `output` type expression"),
+        }
     }
 
     #[test]
@@ -1000,7 +1016,7 @@ mod tests {
     #[test]
     fn test_parse_set_pair() {
         //                         ---- identifier 2
-        let source = "(* for this, that in thing *)hello(* endfor *)";
+        let source = "(* for this, that in thing *)hello(* end *)";
         //      identifier 1 ----     base -----   ----- scope
         let result = get_parser_n(source, 2).parse_set().unwrap();
 
@@ -1026,7 +1042,7 @@ mod tests {
     #[test]
     fn test_parse_block() {
         //                     ---- name
-        let source = "(* block main *)abc(* endblock *)def";
+        let source = "(* block main *)abc(* end *)def";
         let template = get_parser_n(source, 0).compile(None).unwrap();
 
         match template.scope.data.first().unwrap() {

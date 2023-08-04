@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_truthy_boolean() {
-        let template = compile("(* if value *)a(* else *)b(* endif *)").unwrap();
+        let template = compile("(* if value *)a(* else *)b(* end *)").unwrap();
         let true_values = vec![
             json!("lorem"),
             json!(12),
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn incompatible_types() {
-        let template = compile("(* if \"hello\" > true *)a(* endif *)");
+        let template = compile("(* if \"hello\" > true *)a(* end *)");
         assert!(template.is_ok());
         let result = render(&template.unwrap(), &Store::new());
         assert!(result.is_err());
@@ -147,7 +147,7 @@ mod tests {
         // error: incompatible types
         // --> ?:1:7
         // |
-        // 1 | (* if "hello" > true *)a(* endif *)
+        // 1 | (* if "hello" > true *)a(* end *)
         // |         ^^^^^^^^^^^^^^
         // |
         // = help: types `"hello"` and `true` cannot be compared
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn incompatible_operator() {
-        let template = compile("(* if true + false *)a(* endif *)");
+        let template = compile("(* if true + false *)a(* end *)");
         assert!(template.is_ok());
         let result = render(&template.unwrap(), &Store::new());
         assert!(result.is_err());
@@ -165,7 +165,7 @@ mod tests {
         // error: incompatible types
         // --> ?:1:7
         // |
-        // 1 | (* if true + false *)a(* endif *)
+        // 1 | (* if true + false *)a(* end *)
         // |         ^^^^^^^^^^^^
         // |
         // = help: operator `+` is invalid on boolean types
@@ -324,7 +324,7 @@ mod tests {
     // Zip the two Vec<Value> instances together and compare them in a template with the
     // given `Operator`.
     fn test_truthy_compare(left: Vec<Value>, right: Vec<Value>, operator: Operator) {
-        let source = format!("(* if left {} right *)a(* endif *)", operator);
+        let source = format!("(* if left {} right *)a(* end *)", operator);
         let template = compile(&source).unwrap();
 
         let mut store = Store::new();

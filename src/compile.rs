@@ -33,12 +33,10 @@ pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
 pub enum Keyword {
     /// Enables negation.
     Not,
-    /// Beginning of an if expression.
+    /// Beginning of an "if" block.
     If,
-    /// Marks the beginning of the else_branch in an if expression.
+    /// Marks the beginning of the else_branch in an "if" block.
     Else,
-    /// End of an if expression.
-    EndIf,
     /// Beginning of an assignment.
     Let,
     /// Beginning of a loop.
@@ -50,16 +48,14 @@ pub enum Keyword {
     ///
     /// "for person in people"
     In,
-    /// End of a loop.
-    EndFor,
-    /// Beginning of an include expression.
+    /// Beginning of an include block.
     Include,
     /// Beginning of an extends expression.
     Extends,
-    /// Beginning of a block expression.
+    /// Beginning of a "block" block.
     Block,
-    /// Ending of a block expression.
-    EndBlock,
+    /// End of a block.
+    End,
 }
 
 impl Display for Keyword {
@@ -68,15 +64,13 @@ impl Display for Keyword {
             Keyword::Not => write!(f, "not"),
             Keyword::If => write!(f, "if"),
             Keyword::Else => write!(f, "else"),
-            Keyword::EndIf => write!(f, "endif"),
             Keyword::Let => write!(f, "let"),
             Keyword::For => write!(f, "for"),
             Keyword::In => write!(f, "in"),
-            Keyword::EndFor => write!(f, "endfor"),
             Keyword::Include => write!(f, "include"),
             Keyword::Extends => write!(f, "extends'"),
             Keyword::Block => write!(f, "block"),
-            Keyword::EndBlock => write!(f, "endblock"),
+            Keyword::End => write!(f, "end"),
         }
     }
 }
