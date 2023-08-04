@@ -926,7 +926,7 @@ mod tests {
 
     #[test]
     fn test_parse_expression_with_call() {
-        let source = r#"hello (( name | prepend text: "hello, " | append "!" "?" | upper ))"#;
+        let source = r#"hello (( name | prepend text: "hello, " | append "!", "?" | upper ))"#;
         let template = Parser::new(source).compile(None).unwrap();
 
         let mut iterator = template.scope.data.iter();
