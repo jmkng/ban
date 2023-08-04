@@ -381,6 +381,6 @@ use syntax::Marker;
 /// ```
 /// let engine = ban::default();
 /// ```
-pub fn default<'source>() -> Engine<'source> {
+pub fn default() -> Engine {
     Engine::default()
 }

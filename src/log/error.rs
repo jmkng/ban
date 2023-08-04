@@ -2,13 +2,6 @@ use super::{Pointer, RED, RESET};
 use crate::{log::Visual, region::Region};
 use std::fmt::{Debug, Display, Formatter, Result};
 
-pub const UNEXPECTED_TOKEN: &str = "unexpected token";
-pub const UNEXPECTED_BLOCK: &str = "unexpected block";
-pub const UNEXPECTED_EOF: &str = "unexpected eof";
-pub const INVALID_SYNTAX: &str = "invalid syntax";
-pub const INVALID_FILTER: &str = "invalid filter";
-pub const INCOMPATIBLE_TYPES: &str = "incompatible types";
-
 /// An error type that provides a brief description of the error,
 /// and optionally supports adding more contextual "help" text and
 /// a visualization to illustrate the problem.
@@ -44,13 +37,13 @@ pub const INCOMPATIBLE_TYPES: &str = "incompatible types";
 /// ```
 pub struct Error {
     /// Describes the cause of the [`Error`].
-    reason: String,
+    pub reason: String,
     /// A visualization to help illustrate the [`Error`].
-    visual: Option<Box<dyn Visual>>,
+    pub visual: Option<Box<dyn Visual>>,
     /// Additional information to display with the [`Error`].
-    help: Option<String>,
+    pub help: Option<String>,
     /// The name of the Template that the [`Error`] comes from.
-    pub(crate) template: Option<String>,
+    pub template: Option<String>,
 }
 
 impl Error {
@@ -195,35 +188,4 @@ impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         self.reason == other.reason && self.help == other.help && self.template == other.template
     }
-}
-
-/// Return a formatted string describing an unexpected keyword.
-pub fn expected_keyword(received: impl Display) -> String {
-    format!(
-        "expected keyword like `if`, `else`, `endif`, `let`, `for`, `in`, `endfor`, `include`, \
-        `extends`, `block`, `endblock`, found `{}`",
-        received
-    )
-}
-
-/// Return a formatted string describing an unexpected operator.
-pub fn expected_operator(received: impl Display) -> String {
-    format!(
-        "expected operator like `+`, `-`, `*`, `/`, `==`, `!=`, `>=`, `<=`, \
-        found `{}`",
-        received
-    )
-}
-
-/// Return an [`Error`] explaining that the end of source was not expected
-/// at this time.
-pub fn error_eof(source: &str) -> Error {
-    let source_len = source.len();
-    Error::build(UNEXPECTED_EOF)
-        .pointer(source, source_len..source_len)
-        .help("expected additional tokens, did you close all blocks and expressions?")
-}
-
-pub fn error_write() -> Error {
-    Error::build("write failure").help("failed to write result of render, are you low on memory?")
 }

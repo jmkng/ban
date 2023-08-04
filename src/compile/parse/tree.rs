@@ -19,6 +19,29 @@ pub enum Tree {
     For(Iterable),
     /// Variable assignment.
     Let(Let),
+    /// Template block.
+    Block(Block),
+}
+
+/// Represents a section of text that may be overridden by another [`Block`].
+#[derive(Debug, Clone)]
+pub struct Block {
+    /// The name of the [`Block`].
+    pub name: Base,
+    /// The data inside of the [`Block`].
+    pub scope: Scope,
+    /// The location of the [`Block`].
+    pub region: Region,
+}
+
+/// A call to extend another named [`Template`][`crate::Template`] by overriding
+/// its [`Block`] instances
+#[derive(Debug, Clone)]
+pub struct Extends {
+    /// The name of the template to extend.
+    pub name: Base,
+    /// The location of the [`Extends`].
+    pub region: Region,
 }
 
 /// Represents data within expression tags, "(( ))" by default, and may be a Base
@@ -44,7 +67,7 @@ impl Expression {
     }
 }
 
-/// Storage for a "stack" of [`CheckPath`] instances.
+/// Storage for a stack of [`CheckPath`] instances.
 ///
 /// For example, this example represents one [`CheckTree`] made up of two
 /// [`CheckPath`] instances, which are separated at the "||" characters:
@@ -75,38 +98,6 @@ impl CheckTree {
     /// a new [`Check`].
     pub fn split_check(&mut self, check: Check) {
         self.last_mut_must().push(check);
-    }
-
-    /// Return a Region spanning the entirety of the [`CheckTree`], from
-    /// the left [`Base`] in the first [`CheckBranch`] to the right
-    /// (if it exists) `Base` in the last `CheckBranch`.
-    pub fn get_region(&self) -> Region {
-        let branch_check = "branch should have at least one check";
-        let length_check = "length check should ensure safety";
-
-        let first_branch = self
-            .branches
-            .first()
-            .expect("tree should have at least one branch");
-
-        let mut region = first_branch.first().expect(branch_check).left.get_region();
-        if self.branches.len() > 1 {
-            let check = self
-                .branches
-                .last()
-                .expect(length_check)
-                .last()
-                .expect(branch_check);
-
-            let base = check.right.as_ref().unwrap_or(&check.left);
-            region = region.combine(base.get_region());
-        } else if first_branch.len() > 1 {
-            let last_check = first_branch.last().expect(length_check);
-            let base = last_check.right.as_ref().unwrap_or(&last_check.left);
-            region = region.combine(base.get_region())
-        }
-
-        region
     }
 
     /// Return a mutable reference to the last [`CheckBranch`] in the
@@ -209,7 +200,8 @@ impl Base {
     }
 }
 
-/// Set of `Key` instances that can be used to locate data within the `Store`.
+/// Set of [`Identifier`] instances that can be used to locate data
+/// within the [`Store`][`crate::Store`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     /// A set of [`Identifier`] instances that form  a path through the
@@ -354,7 +346,7 @@ pub struct Iterable {
     /// The [`Base`] to be iterated on.
     pub base: Base,
     /// The [`Scope`] that is rendered with each iteration.
-    pub data: Scope,
+    pub scope: Scope,
     /// The location of the [`Iterable`].
     pub region: Region,
 }

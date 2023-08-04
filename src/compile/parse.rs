@@ -4,21 +4,29 @@ pub mod tree;
 mod block;
 mod state;
 
-use self::state::CheckState;
 use crate::{
     compile::{
         lex::{token::Token, LexResult, LexResultMust, Lexer},
-        parse::{block::Block, state::BlockState, tree::*},
+        parse::{
+            block::Block,
+            state::{BlockState, CheckState},
+            tree::*,
+        },
         Keyword, Operator, Scope, Template,
     },
     log::{
-        error_eof, expected_keyword, expected_operator, Error, INVALID_SYNTAX, UNEXPECTED_BLOCK,
-        UNEXPECTED_EOF, UNEXPECTED_TOKEN,
+        message::{
+            error_eof, expected_operator, INVALID_SYNTAX, UNEXPECTED_BLOCK, UNEXPECTED_EOF,
+            UNEXPECTED_TOKEN,
+        },
+        Error,
     },
     region::Region,
 };
 use serde_json::{Number, Value};
 
+/// Provides methods to transform an input stream of [`Token`] into an abstract
+/// syntax tree composed of [`Tree`].
 pub struct Parser<'source> {
     /// `Lexer` used to pull from source as tokens instead of raw text.
     lexer: Lexer<'source>,
@@ -26,6 +34,9 @@ pub struct Parser<'source> {
     ///
     /// Double option is used to remember when the next token is None.
     buffer: Option<Option<(Token, Region)>>,
+    /// Temporarily store an [`Extends`] for the [`Template`] that is being
+    /// parsed.
+    extended: Option<Extends>,
 }
 
 impl<'source> Parser<'source> {
@@ -35,6 +46,7 @@ impl<'source> Parser<'source> {
         Self {
             lexer: Lexer::new(source),
             buffer: None,
+            extended: None,
         }
     }
 
@@ -42,24 +54,35 @@ impl<'source> Parser<'source> {
     ///
     /// Returns a new `Template`, which can be executed with some [`Store`][`crate::Store`]
     /// data to receive output.
-    pub fn compile(mut self, name: Option<&'source str>) -> Result<Template<'source>, Error> {
+    pub fn compile(mut self, name: Option<String>) -> Result<Template, Error> {
         // Temporary storage for fragments of larger blocks.
         let mut states: Vec<BlockState> = vec![];
+
         // Storage for a stack of [`Scope`] instances.
         //
-        // When a closing block such as "endif" is seen, they are rolled into a
-        // [`Tree`] instance for the top level scope.
+        // The first, top level `Scope` will be used to create the `Template`.
+        //
+        // Additional scopes are pushed when blocks like "if" and "for" are started,
+        // in order to capture the body of those blocks.
+        //
+        // When a closing block such as "endif" or "endfor" is seen, the scopes are
+        // popped off and used to create an appropriate [`Tree`] instance that is
+        // then pushed to the first `Scope`.
         let mut scopes: Vec<Scope> = vec![Scope::new()];
 
         while let Some(next) = self.next()? {
             let tree = match next {
+                // Raw text.
+                //
+                // Expected:
+                //
+                // ...
                 (Token::Raw, region) => Tree::Raw(region),
                 // Beginning of an expression.
                 //
                 // Expected:
                 //
                 // BASE [FILTER ...] ...
-                // ----
                 (Token::BeginExpression, region) => {
                     let expression = self.parse_expression()?;
                     let end = self.next_must(Token::EndExpression)?.1.combine(region);
@@ -70,7 +93,6 @@ impl<'source> Parser<'source> {
                 // Expected:
                 //
                 // KEYWORD ...
-                // -------
                 (Token::BeginBlock, region) => {
                     let block = self.parse_block()?;
                     let end = self.next_must(Token::EndBlock)?.1.combine(region);
@@ -81,7 +103,6 @@ impl<'source> Parser<'source> {
                         // Expected:
                         //
                         // [ELSEIF ...] | [ELSE] | ENDIF ...
-                        //                         -----
                         Block::If(tr) => {
                             states.push(BlockState::If {
                                 else_if: false,
@@ -97,15 +118,11 @@ impl<'source> Parser<'source> {
                         // Expected:
                         //
                         // [ELSEIF ...] | [ELSE] | ENDIF ...
-                        //                         -----
                         Block::ElseIf(tr) => {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
                                     .pointer(self.lexer.source, end)
-                                    .help(
-                                        "unexpected `else if` block, did you forget to write \
-                                        an `if` block first?",
-                                    )
+                                    .help("expected `if` before `else if`")
                             };
 
                             match states.last_mut().ok_or_else(error)? {
@@ -132,15 +149,11 @@ impl<'source> Parser<'source> {
                         // Expected:
                         //
                         // ENDIF ...
-                        // -----
                         Block::Else => {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
                                     .pointer(self.lexer.source, end)
-                                    .help(
-                                        "unexpected `else` block, did you forget to write an \
-                                        `if` block first?",
-                                    )
+                                    .help("expected `if` before `else`")
                             };
 
                             match states.last_mut().ok_or_else(error)? {
@@ -163,10 +176,7 @@ impl<'source> Parser<'source> {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
                                     .pointer(self.lexer.source, end)
-                                    .help(
-                                        "unexpected end of `if` block, did you forget to write \
-                                        an `if` block first?",
-                                    )
+                                    .help("expected `if` before `endif`")
                             };
 
                             loop {
@@ -201,7 +211,6 @@ impl<'source> Parser<'source> {
                         // Expected:
                         //
                         // BASE [,] [BASE] IN BASE ENDFOR ...
-                        // ----            -- ---- ------
                         Block::For(set, base) => {
                             states.push(BlockState::For { set, base, region });
                             scopes.push(Scope::new());
@@ -216,19 +225,16 @@ impl<'source> Parser<'source> {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
                                     .pointer(self.lexer.source, end)
-                                    .help(
-                                        "unexpected end of `for` block, did you forget to write a \
-                                        `for` block first?",
-                                    )
+                                    .help("expected `for` before `endfor`")
                             };
 
                             let tree = match states.pop().ok_or_else(error)? {
                                 BlockState::For { set, base, .. } => {
-                                    let data = scopes.pop().unwrap();
+                                    let scope = scopes.pop().unwrap();
                                     Tree::For(Iterable {
                                         set,
                                         base,
-                                        data,
+                                        scope,
                                         region,
                                     })
                                 }
@@ -241,18 +247,64 @@ impl<'source> Parser<'source> {
                         //
                         // Expected:
                         //
-                        // BASE = BASE ...
-                        // ---- - ----
+                        // BASE ASSIGN BASE ...
                         Block::Let(left, right) => Tree::Let(Let { left, right }),
                         // An "include" block.
                         //
                         // Expected:
                         //
                         // BASE [BASE] ...
-                        // ----
                         Block::Include(name, mount) => Tree::Include(Include { name, mount }),
+                        // An "extends" block.
+                        //
+                        // Expected:
+                        //
+                        // ...
+                        Block::Extends(name) => {
+                            if scopes.len() != 1 || !scopes.first().unwrap().data.is_empty() {
+                                return Err(Error::build(UNEXPECTED_BLOCK)
+                                    .pointer(&self.lexer.source, end)
+                                    .help("block `extend` must appear at top of template"));
+                            }
+
+                            self.extended = Some(Extends { name, region: end });
+                            continue;
+                        }
+                        // A "block" block.
+                        //
+                        // Expected:
+                        //
+                        // ENDBLOCK ...
+                        Block::Block(name) => {
+                            states.push(BlockState::Block { name, region: end });
+                            scopes.push(Scope::new());
+                            continue;
+                        }
+                        // An "endblock" block.
+                        //
+                        // Expected:
+                        //
+                        // ...
+                        Block::EndBlock => {
+                            let error = || {
+                                Error::build(UNEXPECTED_BLOCK)
+                                    .pointer(self.lexer.source, end)
+                                    .help("expected `block` before `endblock`")
+                            };
+
+                            let previous = states.pop().ok_or_else(error)?;
+                            match previous {
+                                BlockState::Block { name, region } => Tree::Block(tree::Block {
+                                    name,
+                                    scope: scopes.pop().unwrap(),
+                                    region: end.combine(region),
+                                }),
+                                _ => return Err(error()),
+                            }
+                        }
                     }
                 }
+                //
                 _ => unreachable!("lexer will abort without begin block"),
             };
 
@@ -263,30 +315,29 @@ impl<'source> Parser<'source> {
             let (block, close, region) = match block {
                 BlockState::If { region, .. } => ("if", "endif", region),
                 BlockState::For { region, .. } => ("for", "endfor", region),
+                BlockState::Block { region, .. } => ("block", "endblock", region),
             };
-
             return Err(Error::build(INVALID_SYNTAX)
                 .pointer(self.lexer.source, *region)
-                .help(format!(
-                    "did you close the `{block}` block with a `{close}` block?"
-                )));
+                .help(format!("did you close the `{block}` with `{close}`?")));
         }
 
         assert!(scopes.len() == 1, "must have single scope");
         Ok(Template {
             name,
             scope: scopes.remove(0),
-            source: self.lexer.source,
+            source: self.lexer.source.to_owned(),
+            extended: self.extended,
         })
     }
 
     /// Parse a [`Block`].
     ///
     /// A `Block` is a call to evaluate some kind of expression which may have
-    /// side effects on the `Shadow` data.
+    /// side effects on the [`Shadow`][`crate::store::Shadow`] data.
     fn parse_block(&mut self) -> Result<Block, Error> {
-        // from
-        // |
+        //   from
+        //   |
         // (* if name == "taylor" *)
         //   Welcome back, Taylor.
         // (* endfor *)
@@ -327,14 +378,18 @@ impl<'source> Parser<'source> {
                 let scope = self.parse_mount()?;
                 Ok(Block::Include(name, scope))
             }
-            Keyword::Extends => todo!(),
-            Keyword::Block => todo!(),
-            Keyword::EndBlock => todo!(),
-            unexpected => Err(Error::build(UNEXPECTED_TOKEN)
+            Keyword::Extends => {
+                let name = self.parse_base()?;
+                Ok(Block::Extends(name))
+            }
+            Keyword::Block => {
+                let name = self.parse_base()?;
+                Ok(Block::Block(name))
+            }
+            Keyword::EndBlock => Ok(Block::EndBlock),
+            k @ Keyword::Not | k @ Keyword::In => Err(Error::build(UNEXPECTED_TOKEN)
                 .pointer(self.lexer.source, region)
-                .help(format!(
-                    "keyword `{unexpected}` is not valid in this position"
-                ))),
+                .help(format!("keyword `{k}` is not valid in this position"))),
         }
     }
 
@@ -356,7 +411,7 @@ impl<'source> Parser<'source> {
                     .help(format!(
                         "arguments in an `include` block must be named, \
                         try `[name: ]{}`",
-                        argument.value.get_region().literal(self.lexer.source)?
+                        argument.value.get_region().literal(self.lexer.source)
                     )));
             }
 
@@ -536,7 +591,10 @@ impl<'source> Parser<'source> {
         match self.next_any_must()? {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
             (token, region) => Err(Error::build(UNEXPECTED_TOKEN)
-                .help(expected_keyword(token))
+                .help(format!(
+                    "expected keyword like `if`, `else`, `endif`, `let`, `for`, `in`, `endfor`, `include`, \
+                    `extends`, `block`, `endblock`, found `{token}`"
+                ))
                 .pointer(self.lexer.source, region)),
         }
     }
@@ -636,9 +694,7 @@ impl<'source> Parser<'source> {
                         return Err(Error::build(UNEXPECTED_TOKEN)
                             .pointer(self.lexer.source, region.combine(next_region))
                             .help(format!(
-                                "you can use `{}` to make `{}` a negative number, \
-                                but you must remove the separating whitespace",
-                                Operator::Subtract,
+                                "remove the separating whitespace to make `{}` a negative number",
                                 &self.lexer.source[next_region],
                             )));
                     }
@@ -722,10 +778,7 @@ impl<'source> Parser<'source> {
     ///
     /// Returns an error if an unrecognized escape character is found.
     fn parse_string(&self, region: Region) -> Result<String, Error> {
-        let window = region
-            .literal(self.lexer.source)
-            .expect("window over source should never fail");
-
+        let window = region.literal(self.lexer.source);
         let string = if window.contains('\\') {
             let mut iter = window.char_indices().map(|(i, c)| (region.begin + i, c));
             let mut string = String::new();
@@ -873,12 +926,13 @@ impl<'source> Parser<'source> {
 
 #[cfg(test)]
 mod tests {
-    use super::Parser;
+    use super::{tree::Tree, Parser};
     use crate::compile::{lex::token::Token, tree::Set};
 
     #[test]
     fn test_parser_lexer_integration() {
         let mut parser = Parser::new("hello");
+
         assert_eq!(parser.next(), Ok(Some((Token::Raw, (0..5).into()))));
         assert_eq!(parser.next(), Ok(None));
     }
@@ -887,22 +941,23 @@ mod tests {
     fn test_parse_full_expression() {
         let source = "hello (( name | prepend text: \"hello, \" | append \"!\" \"?\" | upper ))";
         let result = Parser::new(source).compile(None);
+
         assert!(result.is_ok());
-        // println!("{:#?}", result.unwrap().scope.tokens);
-        // println!("{}", text.get(6..60).unwrap())
     }
 
     #[test]
     fn test_parse_negative_num_err() {
         let source = "balance: (( - 1000 ))";
-        let result = Parser::new(source).compile(None);
-        assert!(result.is_err(),);
+        //                         ^-- remove whitespace for negative num
+
+        assert!(Parser::new(source).compile(None).is_err());
     }
 
     #[test]
     fn test_peek_multiple() {
-        let source = "(( one two";
-        let mut parser = Parser::new(source);
+        let mut parser = Parser::new("(( one two");
+
+        // Multiple calls to peek should return the same thing.
         assert!(parser.next().is_ok());
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
@@ -911,16 +966,16 @@ mod tests {
 
     #[test]
     fn test_parse_tree_valid() {
-        //                                                   |---| is_admin negated here
+        //                                                    --- negated
         let source = "(* if this >= that && these == those || not is_admin *)";
         //                  ------------    --------------    ------------
         //                     Check 1          Check 2          Check 1
         //                  ------------------------------    ------------
         //                             Branch 1                  Branch 2
         //                  ----------------------------------------------
-        //                                        Tree
-        let mut parser = get_parser_n(source, 2);
-        let result = parser.parse_tree().unwrap();
+        //                                         Tree
+        let result = get_parser_n(source, 2).parse_tree().unwrap();
+
         assert_eq!(result.branches.len(), 2);
         assert_eq!(result.branches.first().unwrap().len(), 2);
         assert_eq!(result.branches.last().unwrap().len(), 1);
@@ -928,53 +983,66 @@ mod tests {
 
     #[test]
     fn test_parse_tree_missing_base() {
-        let source = "(* if this >= *)";
-        //                         ^-- expected `Base` here
-        let mut parser = get_parser_n(source, 2);
+        let mut parser = get_parser_n("(* if this >= *)", 2);
+        //                                          ^-- expected `Base` here
 
-        let result = parser.parse_tree();
-        assert!(result.is_err());
-        // println!("{:#}", result.unwrap_err());
+        assert!(parser.parse_tree().is_err());
     }
 
     #[test]
     fn test_parse_tree_bad_operator() {
-        let source = "(* if this = that *)";
-        //                       ^-- did you mean `==`?
-        let mut parser = get_parser_n(source, 2);
+        let mut parser = get_parser_n("(* if this = that *)", 2);
+        //                                        ^-- did you mean `==`?
 
-        let result = parser.parse_tree();
-        assert!(result.is_err());
-        // println!("{:#}", result.unwrap_err());
+        assert!(parser.parse_tree().is_err());
     }
 
     #[test]
-    fn test_parse_for_valid() {
-        //
+    fn test_parse_set_pair() {
         //                         ---- identifier 2
         let source = "(* for this, that in thing *)hello(* endfor *)";
-        //                   ---|          ----|   ----|
-        //                      identifier 1   base    data <---- rendered n times
-        let mut parser = get_parser_n(source, 2);
-        let result = parser.parse_set().unwrap();
+        //      identifier 1 ----     base -----   ----- scope
+        let result = get_parser_n(source, 2).parse_set().unwrap();
+
         match result {
             Set::Pair(pa) => {
-                assert_eq!(pa.key.region.literal(source).unwrap(), "this");
-                assert_eq!(pa.value.region.literal(source).unwrap(), "that");
-                assert_eq!(pa.region.literal(source).unwrap(), "this, that");
+                assert_eq!(pa.key.region.literal(source), "this");
+                assert_eq!(pa.value.region.literal(source), "that");
+                assert_eq!(pa.region.literal(source), "this, that");
             }
-            _ => unreachable!(),
+            _ => panic!("two variables should create a pair"),
         }
     }
 
     #[test]
-    fn parse_mount() {
-        //                       -------- name
-        let source = "(* include \"base\" x: data.related *)";
-        //                                --------------- mount
-        let mut parser = get_parser_n(source, 3);
-        let result = parser.parse_mount();
+    fn test_parse_mount() {
+        //                                    -------- name
+        let result = get_parser_n("(* include \"base\" x: data.related *)", 3).parse_mount();
+        //                                             --------------- mount
+
         assert!(result.is_ok_and(|t| t.is_some()));
+    }
+
+    #[test]
+    fn test_parse_block() {
+        //                     ---- name
+        let source = "(* block main *)abc(* endblock *)def";
+        let template = get_parser_n(source, 0).compile(None).unwrap();
+
+        match template.scope.data.first().unwrap() {
+            Tree::Block(block) => {
+                assert_eq!(block.name.get_region().literal(source), "main");
+                match block.scope.data.first().unwrap() {
+                    Tree::Raw(raw) => assert_eq!(raw.literal(source), "abc"),
+                    _ => panic!("unexpected block scope"),
+                }
+            }
+            _ => panic!("expected block"),
+        }
+        match template.scope.data.last().unwrap() {
+            Tree::Raw(raw) => assert_eq!(raw.literal(source), "def"),
+            unexpected => panic!("expected raw text `def`, found `{:?}`", unexpected),
+        }
     }
 
     /// Return a [`Parser`] over the given text that has already read

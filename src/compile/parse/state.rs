@@ -10,9 +10,9 @@ pub enum BlockState {
     If {
         /// True if this "if" is an "else if".
         else_if: bool,
-        /// [`Compare`] derived from this "if" block.
+        /// The [`CheckTree`] derived from this "if" block.
         tree: CheckTree,
-        /// Region spanning the full "if" block.
+        /// [`Region`] spanning the full "if" block.
         region: Region,
         /// True if this "if" has an associated "else".
         has_else: bool,
@@ -24,6 +24,13 @@ pub enum BlockState {
         /// Value being iterated on.
         base: Base,
         /// Region spanning the full "for" tag.
+        region: Region,
+    },
+    /// The `Parser` is working on a "block" block.
+    Block {
+        /// The name of the block.
+        name: Base,
+        /// Region spanning the full "block" block.
         region: Region,
     },
 }

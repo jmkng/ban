@@ -148,7 +148,7 @@ mod tests {
     }
 
     /// Return a new Engine equipped with test filters.
-    fn get_test_engine() -> Engine<'static> {
+    fn get_test_engine() -> Engine {
         Engine::default().with_filter_must("to_lowercase", to_lowercase)
     }
 

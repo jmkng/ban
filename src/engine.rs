@@ -1,8 +1,8 @@
 use crate::{
     compile::{Parser, Template},
     filter::Filter,
-    log::Error,
-    log::INVALID_FILTER,
+    log::{message::INVALID_FILTER, Error},
+    pipe::Pipe,
     render::Renderer,
     Store,
 };
@@ -10,14 +10,14 @@ use std::collections::HashMap;
 
 /// Facilitates compiling and rendering templates, and provides storage
 /// for filters.
-pub struct Engine<'source> {
+pub struct Engine {
     /// Filters that this engine is aware of.
     filters: HashMap<String, Box<dyn Filter>>,
     /// Templates that this Engine is aware of.
-    templates: HashMap<String, Template<'source>>,
+    templates: HashMap<String, Template>,
 }
 
-impl<'source> Engine<'source> {
+impl Engine {
     /// Create a new instance of [`Engine`] with the given `Syntax`.
     ///
     /// Note: This method is a stub and is not yet implemented.
@@ -45,7 +45,7 @@ impl<'source> Engine<'source> {
     /// assert!(template.is_ok());
     /// ```
     #[inline]
-    pub fn compile(&self, text: &'source str) -> Result<Template<'source>, Error> {
+    pub fn compile(&self, text: &str) -> Result<Template, Error> {
         Parser::new(text).compile(None)
     }
 
@@ -65,7 +65,7 @@ impl<'source> Engine<'source> {
     /// let template = engine.compile_must("hello, (( name ))!");
     /// ```
     #[inline]
-    pub fn compile_must(&self, text: &'source str) -> Template<'source> {
+    pub fn compile_must(&self, text: &str) -> Template {
         self.compile(text).unwrap()
     }
 
@@ -89,20 +89,11 @@ impl<'source> Engine<'source> {
     /// assert_eq!(result.unwrap(), "hello, taylor!")
     /// ```
     #[inline]
-    pub fn render(&self, template: &'source Template, store: &Store) -> Result<String, Error> {
-        Renderer::new(self, template, store).render()
-    }
+    pub fn render(&self, template: &Template, store: &Store) -> Result<String, Error> {
+        let mut buffer = get_buffer(template);
+        Renderer::new(self, template, store).render(&mut Pipe::new(&mut buffer))?;
 
-    ///
-    pub fn render_named(&self, name: &str, store: &Store) -> Result<String, Error> {
-        let template = self.get_template(name);
-        if template.is_none() {
-            return Err(Error::build(format!(
-                "template with name `{name}` not found in engine, \
-                add it with `.add_template"
-            )));
-        }
-        self.render(template.unwrap(), store)
+        Ok(buffer)
     }
 
     /// Compile and store a new [`Template`] with the given name.
@@ -125,7 +116,7 @@ impl<'source> Engine<'source> {
     /// let second = engine.add_template("template_name", "hello again");
     /// assert!(second.is_err());
     /// ```
-    pub fn add_template(&mut self, name: &'source str, text: &'source str) -> Result<(), Error> {
+    pub fn add_template(&mut self, name: &str, text: &str) -> Result<(), Error> {
         if let Some(_) = self.templates.get(name) {
             return Err(Error::build(format!(
                 "template with name `{name}` already exists in engine, \
@@ -134,7 +125,7 @@ impl<'source> Engine<'source> {
         }
 
         let template = Parser::new(text)
-            .compile(Some(name))
+            .compile(Some(name.to_owned()))
             .map_err(|e| e.template(name))?;
 
         self.templates.insert(name.to_owned(), template);
@@ -159,13 +150,9 @@ impl<'source> Engine<'source> {
     /// let mut engine = Engine::default();
     /// engine.add_template_must("template_name", "hello, (( name ))!");
     /// ```
-    pub fn add_template_must(
-        &mut self,
-        name: &'source str,
-        text: &'source str,
-    ) -> Result<(), Error> {
+    pub fn add_template_must(&mut self, name: &str, text: &str) -> Result<(), Error> {
         let template = Parser::new(text)
-            .compile(Some(name))
+            .compile(Some(name.to_owned()))
             .map_err(|e| e.template(name))?;
 
         self.templates.insert(name.to_owned(), template);
@@ -353,17 +340,29 @@ impl<'source> Engine<'source> {
 
     /// Return the filter with the given name, if it exists in Engine.
     #[inline]
-    pub fn get_filter(&self, name: &'source str) -> Option<&Box<dyn Filter>> {
+    pub fn get_filter(&self, name: &str) -> Option<&Box<dyn Filter>> {
         self.filters.get(name)
     }
 }
 
-impl<'source> Default for Engine<'source> {
+impl Default for Engine {
     fn default() -> Self {
         Self {
             filters: HashMap::new(),
             templates: HashMap::new(),
         }
+    }
+}
+
+/// Return a String with capacity to suit the given [`Template`].
+///
+/// If the `Template` is extended, a buffer with no capacity is returned,
+/// otherwise a buffer with a capacity equal to the length of the source
+/// is created.
+pub fn get_buffer(template: &Template) -> String {
+    match template.extended {
+        Some(_) => String::new(),
+        None => String::with_capacity(template.source.len()),
     }
 }
 

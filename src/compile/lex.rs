@@ -4,7 +4,10 @@ mod state;
 
 use crate::{
     compile::{lex::state::State, token::Token, Keyword, Operator},
-    log::{expected_operator, Error, INVALID_SYNTAX, UNEXPECTED_TOKEN},
+    log::{
+        message::{expected_operator, INVALID_SYNTAX, UNEXPECTED_TOKEN},
+        Error,
+    },
     region::Region,
     Builder,
 };
@@ -264,11 +267,6 @@ impl<'source> Lexer<'source> {
                         previous.0
                     };
 
-                    let remaining = self
-                        .source
-                        .get(from..take)
-                        .expect("valid error must contain range");
-
                     return Err(Error::build(INVALID_SYNTAX)
                         .pointer(self.source, from..take)
                         .help("this might be an undelimited string, try closing it with `\"`"));
@@ -428,7 +426,7 @@ mod tests {
     };
     use std::{
         fmt::Write,
-        fs::{read_to_string, File},
+        fs::File,
         io::{BufRead, BufReader},
     };
 
@@ -527,7 +525,7 @@ mod tests {
     #[test]
     fn bonkers() {
         let mut lexer = Lexer::new("(( 3 ))");
-        for i in 0..3 {
+        for _ in 0..3 {
             let next = lexer.next();
             println!("{:?}", next)
         }
@@ -621,11 +619,6 @@ mod tests {
             assert_eq!(lexer.next(), Ok(Some((token, range.into()))))
         }
 
-        let next = lexer
-            .next()
-            .expect_err("should receive err with overlapping tags");
-
-        // println!("{:#}", next);
         assert!(lexer.next().is_err())
     }
 

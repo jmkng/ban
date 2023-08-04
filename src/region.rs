@@ -1,4 +1,3 @@
-use crate::log::{Error, INVALID_SYNTAX};
 use std::{
     cmp::{max, min},
     fmt::Display,
@@ -64,15 +63,13 @@ impl Region {
     /// # Errors
     ///
     /// Returns an [`Error`] if the `Region` is out of bounds in the given source text.
-    pub fn literal<'source>(&self, source: &'source str) -> Result<&'source str, Error> {
-        source.get(self.begin..self.end).ok_or_else(|| {
-            Error::build(INVALID_SYNTAX)
-                .pointer(source, self.begin..self.end)
-                .help(
-                    "unable to locate literal value in source text, was the source modified \
-                    after template compilation?",
-                )
-        })
+    pub fn literal<'source>(&self, source: &'source str) -> &'source str {
+        let literal = source.get(self.begin..self.end);
+        if literal.is_none() {
+            panic!("getting literal by region should not fail");
+        }
+
+        literal.unwrap()
     }
 }
 

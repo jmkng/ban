@@ -1,4 +1,4 @@
-use crate::{compile::Operator, filter::Error, log::INCOMPATIBLE_TYPES};
+use crate::{compile::Operator, filter::Error, log::message::INCOMPATIBLE_TYPES};
 use serde_json::{json, Value};
 
 /// Return true if the given [`Value`] is truthy.
