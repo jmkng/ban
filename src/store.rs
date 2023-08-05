@@ -27,7 +27,7 @@ impl Store {
         }
     }
 
-    /// Insert the [`Value`] into the [`Store`].
+    /// Inserts a key-value pair into the [`Store`].
     ///
     /// # Errors
     ///
@@ -60,7 +60,7 @@ impl Store {
         }
     }
 
-    /// Insert the [`Value`] into the [`Store`].
+    /// Inserts a key-value pair into the [`Store`].
     ///
     /// # Panics
     ///
@@ -83,7 +83,7 @@ impl Store {
         self.data.insert(key.into(), to_value(value).unwrap());
     }
 
-    /// Insert the [`Value`] into the [`Store`].
+    /// Inserts a key-value pair into the [`Store`].
     ///
     /// Returns the `Store`, so additional methods may be chained.
     ///
@@ -100,16 +100,18 @@ impl Store {
     ///
     /// assert!(store.is_ok());
     /// ```
+    #[inline]
     pub fn with<S, T>(mut self, key: S, value: T) -> Result<Self, Error>
     where
         S: Into<String>,
         T: Serialize + Display,
     {
         self.insert(key, value)?;
+
         Ok(self)
     }
 
-    /// Insert the [`Value`] into the [`Store`].
+    /// Inserts a key-value pair into the [`Store`].
     ///
     /// Returns the `Store`, so additional methods may be chained.
     ///
@@ -131,10 +133,11 @@ impl Store {
         T: Serialize + Display,
     {
         self.insert_must(key, value);
+
         self
     }
 
-    /// Get the [`Value`] of the given key.
+    /// Returns a reference to the [`Value`] corresponding to the key.
     ///
     /// # Examples
     ///
@@ -152,43 +155,45 @@ impl Store {
     }
 }
 
-// Wrapper for [`Store`] that provides a stack structure to store
-// shadowed data.
+// Wrapper for [`Store`] that provides mutable storage for shadowed values.
 #[derive(Debug)]
-pub(crate) struct Shadow<'store> {
-    pub(crate) store: &'store Store,
+pub struct Shadow<'store> {
+    pub store: &'store Store,
     data: Vec<HashMap<String, Value>>,
 }
 
 impl<'store> Shadow<'store> {
     /// Create a new [`Shadow`] over the given [`Store`].
-    pub(crate) fn new(store: &'store Store) -> Self {
+    #[inline]
+    pub fn new(store: &'store Store) -> Self {
         Self {
             store,
             data: vec![HashMap::new()],
         }
     }
 
-    /// Push a new frame onto the [`Shadow`] stack.
-    pub(crate) fn push(&mut self) {
+    /// Push a new frame onto the [`Shadow`].
+    #[inline]
+    pub fn push(&mut self) {
         self.data.push(HashMap::new());
     }
 
-    /// Remove the top frame from the [`Shadow`] stack.
-    pub(crate) fn pop(&mut self) {
+    /// Remove the top frame from the [`Shadow`].
+    #[inline]
+    pub fn pop(&mut self) {
         if self.data.len() == 1 {
-            panic!("should never pop last scope");
+            panic!("last scope must never be removed");
         }
         self.data.pop();
     }
 
-    /// Insert the value into the top level stack of the [`Shadow`]
+    /// Insert the value into the top level stack of the [`Shadow`].
     ///
     /// # Panics
     ///
     /// Panics if no frames exist within the [`Shadow`].
     #[inline]
-    pub(crate) fn insert_must<S, T>(&mut self, key: S, value: T)
+    pub fn insert_must<S, T>(&mut self, key: S, value: T)
     where
         S: Into<String>,
         T: Serialize + Display,
@@ -216,10 +221,12 @@ impl<'store> Shadow<'store> {
 
 #[cfg(test)]
 mod tests {
+    use super::Shadow;
     use crate::Store;
+    use serde_json::json;
 
     #[test]
-    fn test_insert() {
+    fn test_store_insert() {
         let mut store = Store::new();
         store.insert_must("one", "two");
 
@@ -229,10 +236,37 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_fluent() {
+    fn test_store_insert_fluent() {
         assert!(Store::new()
             .with_must("three", "four")
             .get("three")
             .is_some_and(|t| t.as_str().unwrap() == "four"))
+    }
+
+    #[test]
+    fn test_shadow_insert_and_get() {
+        let mut store = Store::new();
+        store.insert_must("one", "one");
+        store.insert_must("two", "two");
+        let mut shadow = Shadow::new(&store);
+        // Push a frame here or the pop below will panic.
+        shadow.push();
+        shadow.insert_must("one", "shadowed one");
+
+        assert_eq!(shadow.get("one"), Some(&json!("shadowed one")));
+        assert_eq!(shadow.get("two"), Some(&json!("two")));
+        shadow.pop();
+
+        assert_eq!(shadow.get("one"), Some(&json!("one")));
+        assert_eq!(shadow.get("two"), Some(&json!("two")));
+    }
+
+    #[test]
+    #[should_panic(expected = "last scope must never be removed")]
+    fn test_shadow_pop_empty() {
+        let store = Store::new();
+        let mut shadow = Shadow::new(&store);
+
+        shadow.pop();
     }
 }

@@ -1,6 +1,5 @@
 use std::{
     cmp::{max, min},
-    fmt::Display,
     ops::{Index, Range},
 };
 
@@ -28,28 +27,6 @@ impl Region {
         self.end == other.begin || other.end == self.begin
     }
 
-    /// Return a new Region which represents the area between this Region
-    /// and the given Region.
-    ///
-    /// Returns None if the regions are neighbors.
-    pub fn difference(&self, other: Self) -> Option<Self> {
-        if self.is_neighbor(other) {
-            return None;
-        }
-
-        Some(if self.begin < other.begin {
-            Self {
-                begin: self.end,
-                end: other.begin,
-            }
-        } else {
-            Self {
-                begin: other.end,
-                end: self.begin,
-            }
-        })
-    }
-
     /// Combine will merge the indices of two [`Region`] instances.
     pub fn combine(self, other: Self) -> Self {
         Self {
@@ -64,12 +41,11 @@ impl Region {
     ///
     /// Returns an [`Error`] if the `Region` is out of bounds in the given source text.
     pub fn literal<'source>(&self, source: &'source str) -> &'source str {
-        let literal = source.get(self.begin..self.end);
-        if literal.is_none() {
-            panic!("getting literal by region should not fail");
-        }
+        let literal = source
+            .get(self.begin..self.end)
+            .expect("getting literal by region should not fail");
 
-        literal.unwrap()
+        literal
     }
 }
 
@@ -78,15 +54,7 @@ impl Index<Region> for str {
 
     fn index(&self, region: Region) -> &Self::Output {
         let Region { begin, end } = region;
-        &self[begin..end]
-    }
-}
 
-impl Index<Region> for String {
-    type Output = str;
-
-    fn index(&self, region: Region) -> &Self::Output {
-        let Region { begin, end } = region;
         &self[begin..end]
     }
 }
@@ -100,36 +68,38 @@ impl From<Range<usize>> for Region {
     }
 }
 
-impl From<Region> for Range<usize> {
-    fn from(value: Region) -> Self {
-        Self {
-            start: value.begin,
-            end: value.end,
-        }
-    }
-}
-
-impl Display for Region {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}..{}", self.begin, self.end)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_diff_neighbor() {
-        let region1 = Region::new(0..3);
-        let region2 = Region::new(3..6);
-        assert_eq!(region1.difference(region2), None);
+    fn test_is_neighbor() {
+        assert!(Region::new(0..5).is_neighbor(Region::new(5..10)));
+        assert!(!Region::new(5..10).is_neighbor(Region::new(11..14)));
     }
 
     #[test]
-    fn test_diff_not_neighbor() {
-        let region1 = Region::new(0..3);
-        let region2 = Region::new(4..7);
-        assert_eq!(region1.difference(region2), Some(Region::new(3..4)));
+    fn test_combine() {
+        let combined = Region::new(5..10).combine(Region::new(8..15));
+
+        assert_eq!(combined.begin, 5);
+        assert_eq!(combined.end, 15);
+    }
+
+    #[test]
+    fn test_literal() {
+        let source = "Hello, Taylor!";
+        let region = Region::new(7..13);
+
+        assert_eq!(region.literal(source), "Taylor");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_out_of_bounds_literal() {
+        let source = "Hello, Taylor!";
+        let region = Region::new(7..15);
+
+        region.literal(source);
     }
 }

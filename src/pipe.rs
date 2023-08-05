@@ -8,19 +8,17 @@ pub struct Pipe<'buffer> {
 }
 
 impl<'buffer> Pipe<'buffer> {
-    /// Create a new Pipe that writes to the given buffer.
+    /// Create a new `Pipe` that writes to the given buffer.
     pub fn new(buffer: &'buffer mut String) -> Self {
         Self { buffer }
     }
 
-    /// Write the given Value to the Pipe buffer.
-    ///
-    /// The Pipe will handle formatting the value.
+    /// Write the given [`Value`] to the [`Pipe`] buffer.
     ///
     /// # Errors
     ///
-    /// The Pipe supports all Value types, so the only error that will
-    /// be returned is propogated from the [write!] macro itself.
+    /// Returns an [`Error`][`std::fmt::Error`] if the `write!` macro
+    /// is unable to write the `Value`.
     pub fn write_value(&mut self, value: &Value) -> Result {
         match value {
             Value::Null => Ok(()),
@@ -31,33 +29,39 @@ impl<'buffer> Pipe<'buffer> {
         }
     }
 
-    /// Write the value to the buffer using the Display implementation.
+    /// Write the [`Value`] to the buffer using the Display implementation.
     fn write_display(&mut self, value: impl Display) -> Result {
         write!(self.buffer, "{}", value)
     }
 
-    /// Write the value to the buffer as a comma separated list and
-    /// surrounded by braces.
+    /// Write the [`Value`] to the buffer as a comma separated list and
+    /// surrounded by square brackets.
     fn write_array(&mut self, value: &Vec<Value>) -> Result {
         write!(self.buffer, "[")?;
-        let mut iter = value.iter();
-        if let Some(item) = iter.next() {
+        let mut iterator = value.iter().peekable();
+        while let Some(item) = iterator.next() {
             self.write_value(item)?;
-            write!(self.buffer, ", ")?;
+            if iterator.peek().is_some() {
+                write!(self.buffer, ", ")?;
+            }
         }
+
         write!(self.buffer, "]")
     }
 
-    /// Write the value to the buffer as key/value pairs and surrounded
+    /// Write the [`Value`] to the buffer as a key-value pair and surrounded
     /// by curly braces.
     fn write_object(&mut self, value: &Map<String, Value>) -> Result {
         write!(self.buffer, "{{")?;
-        let mut iter = value.iter();
-        if let Some((key, value)) = iter.next() {
-            write!(self.buffer, "{}: ", key)?;
+        let mut iterator = value.iter().peekable();
+        while let Some((key, value)) = iterator.next() {
+            write!(self.buffer, "{key}: ")?;
             self.write_value(value)?;
-            write!(self.buffer, ", ")?;
+            if iterator.peek().is_some() {
+                write!(self.buffer, ", ")?;
+            }
         }
+
         write!(self.buffer, "}}")
     }
 }
@@ -76,5 +80,39 @@ impl Write for Pipe<'_> {
     #[inline]
     fn write_fmt(&mut self, args: Arguments<'_>) -> Result {
         Write::write_fmt(self.buffer, args)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_write_value_string() {
+        let mut buffer = String::new();
+        let mut pipe = Pipe::new(&mut buffer);
+        pipe.write_value(&json!("Hello, World!")).unwrap();
+
+        assert_eq!(buffer, "Hello, World!");
+    }
+
+    #[test]
+    fn test_write_value_array() {
+        let mut buffer = String::new();
+        let mut pipe = Pipe::new(&mut buffer);
+        pipe.write_value(&json!([1, 2, 3])).unwrap();
+
+        assert_eq!(buffer, "[1, 2, 3]");
+    }
+
+    #[test]
+    fn test_write_value_object() {
+        let mut buffer = String::new();
+        let mut pipe = Pipe::new(&mut buffer);
+        pipe.write_value(&json!({"one": "two", "three": "four"}))
+            .unwrap();
+
+        assert_eq!(buffer, "{one: two, three: four}");
     }
 }

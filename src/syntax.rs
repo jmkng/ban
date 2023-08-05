@@ -1,9 +1,6 @@
 use morel::Syntax;
 
 /// Markers that identify blocks and expressions within text.
-///
-/// The actual value of each marker (custom delimiters) can be set by way of the
-/// [`Builder`][`crate::Builder`] type.
 pub enum Marker {
     /// Beginning of an Expression, which allows for outputting content
     /// and passing data through filters.
@@ -51,7 +48,7 @@ impl From<Marker> for usize {
     }
 }
 
-/// Provides methods to build a Syntax.
+/// Provides methods to build a `Syntax`.
 ///
 /// # Example
 ///
