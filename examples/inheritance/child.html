@@ -1,23 +1,14 @@
 <!-- 
-Example template that illustrates how an inheritance system might work. 
+Example template that demonstrates how "block" and "extends" are used. 
 
-This is the child template, so the blocks here would be collected and carried
-to the parent, in a loop, until the base template is found and executed.
+This is a child template because it begins with an "extends" expression. 
+The blocks here are collected and carried to the parent. Assuming the parent
+is not extended itself, the blocks will be executed there.
 -->
-(* extends parent.html *)
+(* extends parent *)
 
 <!-- 
-Just one block.
-
-We see that an extends block exists, so we search for the named parent.
-
-When we parse the parent template, we will collect a series of blocks from them.
-After this is done, we can check each block and see if any of them are named
-identically to one of our blocks.
-
-If we see one, we will change its Region information to be identical to our
-blocks Region, so that when the template is rendered it gets the correct
-data.
+One block named "content" is found here.
 -->
 
 (* block content *)

@@ -1,10 +1,11 @@
 <!-- 
-Example template that illustrates how an inheritance system might work. 
+Example template that demonstrates how "block" and "extends" are used.
 
-This is the parent template, so empty blocks here may be overridden by any child
-with a block of the same name.
+This is a parent template extended by "child.html". Blocks here will 
+be overridden by any child with a matching block.
 -->
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -12,6 +13,16 @@ with a block of the same name.
     <title>Document</title>
 </head>
 <body>
-    (* block content *)(* end *)
+    <!--
+    When a block has content inside of it and the child template has no
+    matching block, the content is executed as a "default" value.
+    -->
+    (* block content *)
+        <h1>Hello!</h1>
+    (* end *)
+    <!--
+    In this case, the child template has a matching "content" block, 
+    so the block is replaced and "<h1>Hello!</h1>" is ignored.
+    -->
 </body>
 </html>

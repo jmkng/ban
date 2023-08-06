@@ -1,4 +1,8 @@
+<!-- 
+Example template that demonstrates how most expressions and blocks look.
+-->
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,14 +12,23 @@
 <body>
     Hello, (( name ))
 
-    (* for person in people *)
-        (( person.name ))
-    (* end *)
+    <ul>
+        (* for person in people *)
+            <li>(( person.name ))</li>
+        (* end *)
+    </ul>
+
+    (* let one = "one" *)
+    (* let two = "two" *)
+
+    (* include header a: one, b: two *)
 
     (* if name == "taylor" *)
-        Welcome back, Taylor.
+        <p>Welcome back, Taylor.</p>
     (* end *)
 
-    (( name | prepend 1: "hello, " | append "!" | upper ))
+    <h1>(* block name *)taylor(* end *)</h1>
+
+    (( name | prepend 1: "hello, " | append "!", "?" | to_lowercase ))
 </body>
 </html>
