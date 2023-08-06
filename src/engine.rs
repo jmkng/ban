@@ -3,15 +3,13 @@ use std::collections::HashMap;
 use crate::{
     compile::{Parser, Template},
     log::Error,
-    render::{
-        filter::{Filter, INVALID_FILTER},
-        pipe::Pipe,
-        Renderer,
-    },
+    render::{filter::Filter, pipe::Pipe, Renderer},
     Builder, Store,
 };
 
 use morel::{Finder, Syntax};
+
+pub const INVALID_FILTER: &str = "invalid filter";
 
 /// Facilitates compiling and rendering templates, and provides storage
 /// for filters.
@@ -392,9 +390,9 @@ impl Default for Engine {
 /// otherwise a buffer with a capacity equal to the length of the source
 /// is created.
 pub fn get_buffer(template: &Template) -> String {
-    match template.extended {
+    match template.get_extends() {
         Some(_) => String::new(),
-        None => String::with_capacity(template.source.len()),
+        None => String::with_capacity(template.get_source().len()),
     }
 }
 

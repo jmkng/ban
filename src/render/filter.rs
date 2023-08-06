@@ -1,8 +1,8 @@
 //! Contains the [`Filter`] trait, and types useful for creating and using
 //! filters.
 //!
-//! A `Filter` is a user-defined function that can be used to modify a [`Value`]
-//! before it is rendered. Any struct that implements the [`Filter`] trait,
+//! A `Filter` is a user-defined function that can be used to mutate a [`Value`]
+//! before it is rendered. Any struct that implements the `Filter` trait,
 //! or function matching the [`apply`][`Filter::apply`] method, can be registered as a
 //! `Filter` on an [`Engine`][`crate::Engine`].
 //!
@@ -63,11 +63,8 @@
 //! let engine = ban::default()
 //!     .with_filter_must("to_lowercase", to_lowercase);
 //! let template = engine.compile("(( name | to_lowercase ))").unwrap();
-//! let result = engine.render(
-//!     &template,
-//!     &Store::new()
-//!         .with_must("name", "TAYLOR")
-//! ).unwrap();
+//! let store = Store::new().with_must("name", "TAYLOR");
+//! let result = engine.render(&template, &store).unwrap();
 //!
 //! assert_eq!(result, "taylor");  
 //! ```
@@ -110,8 +107,6 @@ use std::collections::HashMap;
 pub use crate::{log::Error, region::Region};
 
 use serde_json::Value;
-
-pub const INVALID_FILTER: &str = "invalid filter";
 
 /// Describes a type that can be used to mutate a [`Value`].
 pub trait Filter: Sync + Send {

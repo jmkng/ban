@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     compile::{tree::*, Scope, Template},
-    filter::INVALID_FILTER,
+    engine::INVALID_FILTER,
     log::Error,
     region::Region,
     Engine,
@@ -62,15 +62,15 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// Returns an [`Error`] if rendering any [`Tree`] instance fails,
     /// or writing to the [`Pipe`] fails.
     pub fn render(mut self, pipe: &mut Pipe) -> Result<(), Error> {
-        match &self.template.extended {
+        match &self.template.get_extends() {
             Some(extended) => self.evaluate_scope(extended, pipe),
-            None => self.render_scope(&self.template.scope, pipe),
+            None => self.render_scope(self.template.get_scope(), pipe),
         }
         .map_err(|error| {
             // The `Error` might come from another `Template`, so don't change
             // the name if it already has one.
-            if !error.is_named() && self.template.name.is_some() {
-                return error.with_name(self.template.name.as_ref().unwrap());
+            if !error.is_named() && self.template.get_name().is_some() {
+                return error.with_name(self.template.get_name().unwrap());
             }
 
             error
@@ -89,12 +89,15 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// Returns an [`Error`] if the extended `Template` does not exist, or rendering any
     /// [`Tree`] instance fails.
     fn evaluate_scope(&mut self, extends: &Extends, pipe: &mut Pipe) -> Result<(), Error> {
-        let name = extends.name.get_region().literal(&self.template.source);
+        let name = extends
+            .name
+            .get_region()
+            .literal(self.template.get_source());
         let template = self
             .engine
             .get_template(name)
             .ok_or_else(|| error_missing_template(name))?;
-        self.collect_blocks(&self.template.scope);
+        self.collect_blocks(self.template.get_scope());
 
         Renderer::new(self.engine, &template, self.shadow.store)
             .with_blocks(take(&mut self.blocks))
@@ -148,7 +151,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// Returns an [`Error`] if rendering any [`Tree`] instance fails.
     fn render_block(&mut self, block: &'source Block, pipe: &mut Pipe) -> Result<(), Error> {
-        let name = block.name.get_region().literal(&self.template.source);
+        let name = block.name.get_region().literal(self.template.get_source());
 
         match self.blocks.get(name) {
             Some(shadowed) => Renderer::new(self.engine, shadowed.template, self.shadow.store)
@@ -164,7 +167,10 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// Returns an [`Error`] if the named [`Template`] is not found in the [`Engine`],
     /// or rendering any [`Tree`] instance fails.
     fn render_include(&mut self, include: &Include, pipe: &mut Pipe) -> Result<(), Error> {
-        let name = include.name.get_region().literal(&self.template.source);
+        let name = include
+            .name
+            .get_region()
+            .literal(self.template.get_source());
         let template = self
             .engine
             .get_template(name)
@@ -175,7 +181,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
             let mut scoped_store = Store::new();
 
             for point in include.mount.as_ref().unwrap().values.iter() {
-                let name = point.name.literal(&self.template.source);
+                let name = point.name.literal(self.template.get_source());
                 let value = self.evaluate_base(&point.value)?;
                 scoped_store.insert_must(name, value);
             }
@@ -269,7 +275,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
                         .map(|bool| if leaf.negate { !bool } else { bool })
                         .map_err(|error| {
                             error.with_pointer(
-                                &self.template.source,
+                                self.template.get_source(),
                                 leaf.left.get_region().combine(base.get_region()),
                             )
                         })?
@@ -344,11 +350,11 @@ impl<'source, 'store> Renderer<'source, 'store> {
         };
 
         for call in call_stack.iter().rev() {
-            let name_literal = call.name.region.literal(&self.template.source);
+            let name_literal = call.name.region.literal(self.template.get_source());
             let func = self.engine.get_filter(name_literal);
             if func.is_none() {
                 return Err(Error::build(INVALID_FILTER)
-                    .with_pointer(&self.template.source, call.name.region)
+                    .with_pointer(self.template.get_source(), call.name.region)
                     .with_help(format!(
                         "template wants to use the `{name_literal}` filter, but a filter with that \
                         name was not found in this engine, did you add the filter to the engine with \
@@ -363,7 +369,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
             };
 
             let returned = func.unwrap().apply(&value, &arguments).or_else(|error| {
-                Err(error.with_pointer(&self.template.source, call.name.region))
+                Err(error.with_pointer(self.template.get_source(), call.name.region))
             })?;
 
             value = Cow::Owned(returned);
@@ -377,7 +383,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// The literal value of the `Region` within the source text is retrieved
     /// and returned.
     fn evaluate_raw(&self, region: &Region) -> &str {
-        region.literal(&self.template.source)
+        region.literal(self.template.get_source())
     }
 
     /// Evaluate a set of [`Identifier`] instances to return a [`Value`] from the [`Store`].
@@ -392,14 +398,14 @@ impl<'source, 'store> Renderer<'source, 'store> {
             .expect("key vector should always have at least one key")
             .region;
 
-        let first_value = first_region.literal(&self.template.source);
+        let first_value = first_region.literal(self.template.get_source());
         let store_value = self.shadow.get(first_value);
 
         let mut value: Cow<Value> = if store_value.is_some() {
             Cow::Borrowed(store_value.unwrap())
         } else {
             return Err(Error::build("missing store value")
-                .with_pointer(&self.template.source, first_region)
+                .with_pointer(self.template.get_source(), first_region)
                 .with_help(format!(
                     "unable to find `{first_value}` in store, \
                     ensure it exists or try wrapping with an `if` block",
@@ -410,7 +416,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
             match value.as_object() {
                 Some(object) => {
                     let key_region = key.region;
-                    let key_name = key_region.literal(&self.template.source);
+                    let key_name = key_region.literal(self.template.get_source());
                     let next_object = object.get(key_name);
 
                     value = if next_object.is_some() {
@@ -440,7 +446,10 @@ impl<'source, 'store> Renderer<'source, 'store> {
 
         for arg in &arguments.values {
             let name = if arg.name.is_some() {
-                arg.name.unwrap().literal(&self.template.source).to_string()
+                arg.name
+                    .unwrap()
+                    .literal(self.template.get_source())
+                    .to_string()
             } else {
                 let temp = unnamed;
                 unnamed += 1;
@@ -487,7 +496,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
         while let Some(next) = iterator.next() {
             match next {
                 Tree::Block(block) => {
-                    let name = block.name.get_region().literal(&self.template.source);
+                    let name = block.name.get_region().literal(self.template.get_source());
                     self.blocks.insert(
                         name.to_string(),
                         Named {
@@ -516,7 +525,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
         N: Serialize + Display,
         T: Serialize + Display,
     {
-        let source = &self.template.source;
+        let source = self.template.get_source();
         match set {
             Set::Single(si) => {
                 let key = si.region.literal(&source);
@@ -731,7 +740,7 @@ mod tests {
 
         assert!(renderer.blocks.get("one").is_none());
         assert!(renderer.blocks.get("two").is_none());
-        renderer.collect_blocks(&template.scope);
+        renderer.collect_blocks(template.get_scope());
 
         assert!(renderer.blocks.get("one").is_some());
         assert!(renderer.blocks.get("two").is_some());

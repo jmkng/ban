@@ -2,7 +2,7 @@ use super::{Pointer, RED, RESET};
 use crate::{log::Visual, region::Region};
 use std::fmt::{Debug, Display, Formatter, Result};
 
-/// Describes an error, and allows adding a contextual "help" text and visualization.
+/// Describes an error, and allows adding a contextual help text and visualization.
 ///
 /// # Examples
 ///
@@ -43,14 +43,23 @@ pub struct Error {
 
 impl Error {
     /// Create a new [`Error`].
-    pub fn new<T, Y>(reason: T, template: T, help: T, visual: Y) -> Self
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::{filter::{visual::Pointer, Error}};
+    ///
+    /// let pointer = Pointer::new("source", (0..4).into());
+    /// Error::new("unexpected keyword", "name", "help", pointer);
+    /// ```
+    pub fn new<T, Y>(reason: T, name: T, help: T, visual: Y) -> Self
     where
         T: Into<String>,
         Y: Visual + 'static,
     {
         Error {
             reason: reason.into(),
-            name: Some(template.into()),
+            name: Some(name.into()),
             visual: Some(Box::new(visual)),
             help: Some(help.into()),
         }

@@ -236,12 +236,12 @@ impl<'source> Parser<'source> {
         }
         assert!(scopes.len() == 1, "must have single scope");
 
-        Ok(Template {
+        Ok(Template::new(
             name,
-            scope: scopes.remove(0),
-            source: self.lexer.source.to_owned(),
-            extended: self.extended,
-        })
+            scopes.remove(0),
+            self.lexer.source.to_owned(),
+            self.extended,
+        ))
     }
 
     /// Parse a [`Fragment`].
@@ -892,7 +892,7 @@ mod tests {
             .compile(None)
             .unwrap();
 
-        let mut iterator = template.scope.data.iter();
+        let mut iterator = template.get_scope().data.iter();
         iterator.next();
 
         match iterator.next().unwrap() {
@@ -1027,7 +1027,7 @@ mod tests {
             .compile(None)
             .unwrap();
 
-        match template.scope.data.first().unwrap() {
+        match template.get_scope().data.first().unwrap() {
             Tree::Block(block) => {
                 assert_eq!(block.name.get_region().literal(source), "main");
                 match block.scope.data.first().unwrap() {
@@ -1037,7 +1037,7 @@ mod tests {
             }
             _ => panic!("expected block"),
         }
-        match template.scope.data.last().unwrap() {
+        match template.get_scope().data.last().unwrap() {
             Tree::Raw(raw) => assert_eq!(raw.literal(source), "def"),
             unexpected => panic!("expected raw text `def`, found `{:?}`", unexpected),
         }

@@ -26,31 +26,31 @@
 //!
 //! ## Usage
 //!
-//! Create a new [`Engine`][`crate::Engine`] with [`default`][`crate::default`],
+//! Create a new [`Engine`][`crate::Engine`] with [`ban::default`][`crate::default`],
 //! or if you want to use custom delimiters, use the [`Builder`][`crate::Builder`]
-//! type and the [`new`][`crate::new`] method.
+//! type and the [`ban::new`][`crate::new`] method.
 //!
 //! ```
 //! let engine = ban::default();
 //! ```
 //!
-//! The [`Engine`] type provides a place for you to register
-//! [`filters`][`crate::filter::Filter`] and store other
-//! [`templates`][`crate::Template`] that you can call with the `include` block.
+//! The [`Engine`] type provides a place for you to register filters and store other
+//! templates that you can call with the `include` block.
 //!
 //! ## Compile
 //!
-//! Use the [`Engine`] to compile a [`Template`].
+//! Use the `Engine` to compile a [`Template`].
 //!
 //! ```
 //! let engine = ban::default();
-//! let template = engine.compile("hello (( name ))!");
+//!
+//! let template = engine.compile("hello (( name ))!").is_ok();
 //! ```
 //!
 //! ## Create a Store
 //!
-//! The [`Template`] we just compiled has a single expression that wants to
-//! render something called "name".
+//! The `Template` we just compiled has a single expression that wants to render something
+//! called "name".
 //!
 //! To render this, we will need to supply a [`Store`] instance containing a value
 //! for that identifier.
@@ -64,40 +64,40 @@
 //!
 //! ## Render
 //!
-//! Now that we have a [`Store`] containing the data our [`Template`] wants
-//! to use, we can tell the [`Engine`] to render it.
+//! Now that we have a `Store` containing the data our `Template` wants to use, we can use
+//! the `Engine` to render it.
 //!
 //! ```
 //! use ban::Store;
 //!
 //! let engine = ban::default();
-//! let template = engine.compile("hello, (( name ))!");
+//! let template = engine.compile("hello, (( name ))!").unwrap();
 //!
 //! let mut store = Store::new();
 //! store.insert_must("name", "taylor");
 //!
-//! let result = engine.render(&template.unwrap(), &store);
-//! assert_eq!(result.unwrap(), "hello, taylor!");
+//! let result = engine.render(&template, &store).unwrap();
+//!
+//! assert_eq!(result, "hello, taylor!");
 //! ```
 //!
 //! # Syntax
 //!
-//! Ban doesn't have a lot of complicated syntax to learn. It should be
-//! familiar if you've used any other template engine.
-//!
 //! This section provides an overview of expressions and the different
 //! blocks you can use.
 //!
+//! Ban should be familiar if you've used other template engines.
+//!
 //! ## Expressions
 //!
-//! Expressions let you render content from the [`Store`], or literal values
+//! Expressions let you render content from the `Store`, or literal values
 //! like strings and numbers. They look like this:
 //!
 //! ```text
 //! (( name ))
 //! ```
 //!
-//! Or, if you want to transform the "name" variable using filters:
+//! Or, if you want to mutate the "name" variable using filters:
 //!
 //! ```text
 //! (( name | to_lowercase | left 3 ))
@@ -110,22 +110,24 @@
 //!
 //! The input for the first filter comes from the value on the far left.
 //! It travels through each filter from left to right, and the output of
-//! the final filter in the chain is what gets rendered.
+//! the final filter in the chain is rendered.
 //!
 //! Filters may accept any number of arguments, or none. They may be named
 //! or anonymous.
 //!
-//! Named arguments look like this:
+//! Named arguments require a colon between the name and value:
 //!
 //! ```text
-//! (( name | tag name: "taylor" age: 25 ))
+//! (( name | tag name: "taylor", age: 25 ))
 //! ```
 //!
 //! Anonymous arguments work the same way, but have no explicit name:
 //!
 //! ```text
-//! (( name | tag "taylor" 25 ))
+//! (( name | tag "taylor", 25 ))
 //! ```
+//!
+//! Both variants require arguments to be separated with a comma.
 //!
 //! See the [`filter`][`crate::filter`] module for more information.
 //!
@@ -163,51 +165,32 @@
 //! You can use the `not` keyword to negate:
 //!
 //! ```text
-//! (* if not false && 500 > 10 *)
+//! (* if not false && 500 > 10 || true *)
 //!     hello
 //! (* end *)
-//! ```
-//!
-//! You can view an if block as a tree, which may have one or more branches.
-//! Each branch may also have one or more leaves.
-//!
-//! The `||` and `&&` operators are used to divide branches and leaves respectively,
-//! similar to how they are used in many programming languages.
-//!
-//! For an if block to execute, it must have at least one branch where all leaves
-//! are truthy.
-//!
-//! ```text
-//!                                        |---| negated
-//! (* if this >= that && these == those || not is_admin *);
-//!       ------------    --------------    ------------
-//!          Leaf 1           Leaf 2            Leaf 1
-//!       ------------------------------    ------------
-//!                   Branch 1                 Branch 2
-//!       ----------------------------------------------
-//!                            Tree
 //! ```
 //!
 //! ### Examples
 //!
 //! ```
-//! use ban::{Store};
-//! let mut engine = ban::default();
+//! use ban::Store;
 //!
-//! let template = engine.compile("(* if first > second *)hello(* else *)goodbye(* end *)");
+//! let mut engine = ban::default();
+//! let template = engine
+//!     .compile("(* if first > second *)hello(* else *)goodbye(* end *)")
+//!     .unwrap();
+//!
 //! let store = Store::new()
 //!     .with_must("first", 100)
 //!     .with_must("second", 10);
+//! let result = engine.render(&template, &store).unwrap();
 //!
-//! let result = engine.render(&template.unwrap(), &store);
-//! assert_eq!(result.unwrap(), "hello");
+//! assert_eq!(result, "hello");
 //!```
 //!
 //! ## For
 //!
 //! For blocks allow iteration over a value.
-//!
-//! You can iterate over arrays, objects, and strings.
 //!
 //! ```text
 //! (* for item in inventory *)
@@ -224,8 +207,8 @@
 //! (* end *)
 //! ```
 //!
-//! The values held by the identifiers depends on the type you are iterating
-//! on:
+//! The values held by the identifiers depends on the type you are
+//! iterating on:
 //!
 //! Type   | Value for `i`       | Value for `item`
 //! ------ | ------------------- | ----------------
@@ -237,14 +220,17 @@
 //!
 //! ```
 //! use ban::{filter::serde::json, Store};
-//! let mut engine = ban::default();
 //!
-//! let template = engine.compile("(* for item in inventory *)(( item )), (* end *)");
+//! let mut engine = ban::default();
+//! let template = engine
+//!     .compile("(* for item in inventory *)(( item )), (* end *)")
+//!     .unwrap();
+//!
 //! let store = Store::new()
 //!     .with_must("inventory", json!(["sword", "shield"]));
+//! let result = engine.render(&template, &store).unwrap();
 //!
-//! let result = engine.render(&template.unwrap(), &store);
-//! assert_eq!(result.unwrap(), "sword, shield, ");
+//! assert_eq!(result, "sword, shield, ");
 //!```
 //!
 //! ## Let
@@ -255,21 +241,8 @@
 //! (* let name = "taylor" *)
 //! ```
 //!
-//! The left side of the expression must be an identifier, meaning an unquoted string,
-//! but the right side can be an identifier or literal value.
-//!
-//! Assignments made within a for block are scoped to the lifetime of that block:
-//!
-//! ```text
-//! (* for item in inventory *)
-//!     (* let name = item.name *)
-//!     Name: (( name ))
-//! (* end *)
-//!
-//! Last item name: (( name )). // <-- Error, "name" is not in scope!
-//! ```
-//!
-//! Assignments made outside of a loop are available globally:
+//! The left side of the expression must be an identifier, meaning an unquoted
+//! string, but the right side can be an identifier or literal value.
 //!
 //! ```text
 //! (* if is_admin *)
@@ -281,6 +254,17 @@
 //! Hello, (( name )).
 //! ```
 //!
+//! Assignments made within a for block are scoped to the block:
+//!
+//! ```text
+//! (* for item in inventory *)
+//!     (* let name = item.name *)
+//!     Name: (( name ))
+//! (* end *)
+//!
+//! Last item name: (( name )). // <-- Error, "name" is not in scope!
+//! ```
+//!
 //! ### Examples
 //!
 //! ```
@@ -288,9 +272,13 @@
 //!
 //! let mut engine = ban::default();
 //!
-//! let template = engine.compile("hello, (* let name = \"taylor\" -*) (( name ))!");
-//! let result = engine.render(&template.unwrap(), &Store::new());
-//! assert_eq!(result.unwrap(), "hello, taylor!");
+//! let template = engine
+//!     .compile("hello, (* let name = \"taylor\" -*) (( name ))!")
+//!     .unwrap();
+//! let store = Store::new();
+//! let result = engine.render(&template, &store).unwrap();
+//!
+//! assert_eq!(result, "hello, taylor!");
 //!```
 //!
 //! ## Include
@@ -301,17 +289,17 @@
 //! (* include header *)
 //! ```
 //!
-//! If you call another template as seen above, it will have access to the same store
+//! If you call another template this way, it will have access to the same store
 //! as the template that called it.
 //!
 //! You can pass arguments, similar to filters:
 //!
 //! ```text
-//! (* include header name: data.name *)
+//! (* include header name: data.name, age: data.age *)
 //! ```
 //!
-//! When you pass arguments to an included template, it will have access to those values
-//! and nothing else.
+//! When you pass arguments to an included template, it will have access to those
+//! values and nothing else.
 //!
 //! ### Examples
 //!
@@ -320,16 +308,18 @@
 //!
 //! let mut engine = ban::default();
 //! engine
-//!     .add_template_must("header", "hello, (( name ))!")
+//!     .add_template_must("header", "hello, (( name ))! - (( age ))")
 //!     .unwrap();
 //!
-//! let template = engine.compile(r#"(* include header name: data.name *)"#).unwrap();
+//! let template = engine
+//!     .compile(r#"(* include header name: data.name, age: data.age *)"#)
+//!     .unwrap();
 //!
-//! let result = engine.render(
-//!     &template,
-//!     &Store::new().with_must("data", json!({"name": "taylor", "age": 25})),
-//! );
-//! assert_eq!(result.unwrap(), "hello, taylor!");
+//! let store = Store::new()
+//!     .with_must("data", json!({"name": "taylor", "age": 25}));
+//! let result = engine.render(&template, &store);
+//!
+//! assert_eq!(result.unwrap(), "hello, taylor! - 25");
 //!```
 //!
 //! ## Extends
@@ -340,39 +330,37 @@
 //! (* extends parent *)
 //! ```
 //!
-//! A template extends another template when the "extends" expression is found first in the
-//! template source.
+//! A template extends another template when the "extends" expression is found first
+//! in the template source.
 //!
-//! When Ban renders an extended template, all of the block declarations in the source are
-//! collected and carried to the parent. Assuming the parent template is not also extended,
-//! the blocks are rendered there.
+//! When Ban renders an extended template, all of the blocks found in the source are
+//! collected and carried to the parent. Assuming the parent template is not also
+//! extended, the blocks are rendered there.
 //!
-//! When a parent (non-extended) template is rendered and a block expression is encountered,
-//! ban will check to see if it has a block from a child template with the same name. If it
-//! does, the block is rendered.
+//! When a block expression is found in a parent (non-extended) template, Ban will
+//! render the matching block, if it has one.
 //!
-//! When no matching block is found, any data inside of the block is rendered instead as a
-//! default value.
+//! When no matching block is found, any data inside of the block is rendered instead
+//! as a default value.
 //!
 //! ```rust
 //! use ban::{Engine, Store};
 //!
 //! let mut engine = Engine::default();
+//!
 //! engine
 //!     .add_template_must(
-//!         "first", //                                           ----------- default
+//!         "first",
 //!         "hello (* block name *)(* end *), (* block greeting *)doing well?(* end *)",
 //!     )
 //!     .unwrap();
 //! engine
 //!     .add_template_must(
 //!         "second",
-//!         "(* extends first *)\
-//!         (* block name *)\
-//!         (( name ))\
-//!         (* end *)",
+//!         "(* extends first *)(* block name *)(( name ))(* end *)",
 //!     )
 //!     .unwrap();
+//!
 //! let store = Store::new().with_must("name", "taylor");
 //! let template = engine.get_template("second").unwrap();
 //!
@@ -382,11 +370,13 @@
 //! );
 //!```
 //!
-//! View the `examples/inheritance` directory for a full illustration.
+//! View the [examples/inheritance](https://github.com/jmkng/ban/tree/main/examples/inheritance)
+//! directory for a full illustration.
 //!
 //! ## Delimiters
 //!
-//! Use the `Builder` type to enable custom delimiters.
+//! Use the `Builder` type to create an `Engine` that recognizes a different
+//! set of delimiters.
 //!
 //! ```
 //! use ban::{Engine, Builder, Store};
@@ -398,12 +388,14 @@
 //!         .with_whitespace(&'~')
 //!         .to_syntax(),
 //! );
+//!
 //! let template = engine
 //!     .compile("{@ if true ~@}     Hello, >> name <<!{@ end @}")
 //!     .unwrap();
-//! let result = engine.render(&template, &Store::new().with_must("name", "taylor"));
+//! let store = Store::new().with_must("name", "taylor");
+//! let result = engine.render(&template, &store).unwrap();
 //!
-//! assert_eq!(result, Ok("Hello, taylor!".into()))
+//! assert_eq!(result, "Hello, taylor!")
 //! ```
 #![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
