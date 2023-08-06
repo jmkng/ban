@@ -1,31 +1,51 @@
+use std::collections::HashMap;
+
 use crate::{
     compile::{Parser, Template},
-    filter::Filter,
-    log::{message::INVALID_FILTER, Error},
-    pipe::Pipe,
-    render::Renderer,
-    Store,
+    log::Error,
+    render::{
+        filter::{Filter, INVALID_FILTER},
+        pipe::Pipe,
+        Renderer,
+    },
+    Builder, Store,
 };
-use std::collections::HashMap;
+
+use morel::{Finder, Syntax};
 
 /// Facilitates compiling and rendering templates, and provides storage
 /// for filters.
 pub struct Engine {
-    /// Filters that this engine is aware of.
+    /// [`Filter`] instances assigned to this [`Engine`].
     filters: HashMap<String, Box<dyn Filter>>,
-    /// Templates that this Engine is aware of.
+    /// [`Template`] instances assigned to this [`Engine`].
     templates: HashMap<String, Template>,
+    /// [`Finder`] used to compile [`Template`] instances.
+    finder: Finder,
 }
 
 impl Engine {
-    /// Create a new instance of [`Engine`] with the given `Syntax`.
+    /// Create a new [`Engine`] with the given `Syntax`.
     ///
-    /// Note: This method is a stub and is not yet implemented.
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Builder;
+    ///
+    /// let syntax = Builder::new()
+    ///     .with_expression("{{", "}}")
+    ///     .with_block("{*", "*}")
+    ///     .to_syntax();
+    ///
+    /// let engine = ban::new(syntax);
+    /// ```
     #[inline]
-    pub fn new() -> Self {
-        todo!()
-        // This function will accept and use a Syntax to parse templates,
-        // but isn't implemented yet.
+    pub fn new(syntax: Syntax) -> Self {
+        Self {
+            filters: HashMap::new(),
+            templates: HashMap::new(),
+            finder: Finder::new(syntax),
+        }
     }
 
     /// Compile a new [`Template`].
@@ -46,7 +66,7 @@ impl Engine {
     /// ```
     #[inline]
     pub fn compile(&self, text: &str) -> Result<Template, Error> {
-        Parser::new(text).compile(None)
+        Parser::new(text, &self.finder).compile(None)
     }
 
     /// Compile a new [`Template`].
@@ -124,9 +144,9 @@ impl Engine {
             )));
         }
 
-        let template = Parser::new(text)
+        let template = Parser::new(text, &self.finder)
             .compile(Some(name.to_owned()))
-            .map_err(|e| e.template(name))?;
+            .map_err(|error| error.with_name(name))?;
 
         self.templates.insert(name.to_owned(), template);
         Ok(())
@@ -151,9 +171,9 @@ impl Engine {
     /// engine.add_template_must("template_name", "hello, (( name ))!");
     /// ```
     pub fn add_template_must(&mut self, name: &str, text: &str) -> Result<(), Error> {
-        let template = Parser::new(text)
+        let template = Parser::new(text, &self.finder)
             .compile(Some(name.to_owned()))
-            .map_err(|e| e.template(name))?;
+            .map_err(|error| error.with_name(name))?;
 
         self.templates.insert(name.to_owned(), template);
         Ok(())
@@ -184,20 +204,21 @@ impl Engine {
     /// # Examples
     ///
     /// ```
+    /// use std::collections::HashMap;
+    ///
     /// use ban::{
     ///     filter::{
     ///         serde::{json, Value},
     ///         Error,
     ///     },
-    ///     Engine, Store,
+    ///     Engine
     /// };
-    /// use std::collections::HashMap;
     ///
     /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
     ///     match value {
     ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
     ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
-    ///            .help("use quotes to coerce data to string")
+    ///            .with_help("use quotes to coerce data to string")
     ///         ),
     ///     }
     /// };
@@ -213,7 +234,7 @@ impl Engine {
     {
         let as_string = name.to_string();
         if self.filters.get(&as_string).is_some() {
-            return Err(Error::build(INVALID_FILTER).help(format!(
+            return Err(Error::build(INVALID_FILTER).with_help(format!(
                 "filter with name `{name}` already exists in engine, \
                 overwrite it with `.add_filter_must`"
             )));
@@ -229,20 +250,21 @@ impl Engine {
     /// # Examples
     ///
     /// ```
+    /// use std::collections::HashMap;
+    ///
     /// use ban::{
     ///     filter::{
     ///         serde::{json, Value},
     ///         Error,
     ///     },
-    ///     Engine, Store,
+    ///     Engine
     /// };
-    /// use std::collections::HashMap;
     ///
     /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
     ///     match value {
     ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
     ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
-    ///            .help("use quotes to coerce data to string")
+    ///            .with_help("use quotes to coerce data to string")
     ///         ),
     ///     }
     /// };
@@ -269,20 +291,21 @@ impl Engine {
     /// # Examples
     ///
     /// ```
+    /// use std::collections::HashMap;
+    ///
     /// use ban::{
     ///     filter::{
     ///         serde::{json, Value},
     ///         Error,
     ///     },
-    ///     Engine, Store,
+    ///     Engine
     /// };
-    /// use std::collections::HashMap;
     ///
     /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
     ///     match value {
     ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
     ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
-    ///            .help("use quotes to coerce data to string")
+    ///            .with_help("use quotes to coerce data to string")
     ///         ),
     ///     }
     /// };
@@ -309,20 +332,21 @@ impl Engine {
     /// # Examples
     ///
     /// ```
+    /// use std::collections::HashMap;
+    ///
     /// use ban::{
     ///     filter::{
     ///         serde::{json, Value},
     ///         Error,
     ///     },
-    ///     Engine, Store,
+    ///     Engine
     /// };
-    /// use std::collections::HashMap;
     ///
     /// fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
     ///     match value {
     ///         Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
     ///         _ => Err(Error::build("filter `to_lowercase` requires string input")
-    ///            .help("use quotes to coerce data to string")
+    ///            .with_help("use quotes to coerce data to string")
     ///         ),
     ///     }
     /// };
@@ -346,10 +370,18 @@ impl Engine {
 }
 
 impl Default for Engine {
+    /// Create a new [`Engine`] with the default `Syntax`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let engine = ban::default();
+    /// ```
     fn default() -> Self {
         Self {
             filters: HashMap::new(),
             templates: HashMap::new(),
+            finder: Finder::new(Builder::new().to_syntax()),
         }
     }
 }
@@ -366,11 +398,18 @@ pub fn get_buffer(template: &Template) -> String {
     }
 }
 
+/// Return a new [`Finder`] with default [`Syntax`][`morel::Syntax`].
+pub fn new_finder_default() -> Finder {
+    Finder::new(Builder::new().to_syntax())
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{engine::Engine, log::Error};
-    use serde_json::Value;
     use std::collections::HashMap;
+
+    use crate::{engine::Engine, log::Error};
+
+    use serde_json::Value;
 
     #[test]
     fn test_add() {
@@ -415,12 +454,12 @@ mod tests {
             .is_ok_and(|v| v == Value::String("b".into()))));
     }
 
-    /// A Filter used to test Engine.
+    /// A [`Filter`][`crate::filter::Filter`] used to test Engine.
     fn faux_filter_a(_: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
         Ok(Value::String("a".into()))
     }
 
-    /// A Filter used to test Engine.
+    /// A [`Filter`][`crate::filter::Filter`] used to test Engine.
     fn faux_filter_b(_: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
         Ok(Value::String("b".into()))
     }

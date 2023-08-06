@@ -1,5 +1,6 @@
 mod lex;
 mod parse;
+mod syntax;
 mod template;
 
 pub use crate::compile::{
@@ -8,25 +9,19 @@ pub use crate::compile::{
     template::Template,
 };
 
-use crate::log::Error;
+pub use self::syntax::Builder;
+
 use std::fmt::Display;
 
-/// Compile a [`Template`] from the given text.
-///
-/// Provides a shortcut to quickly compile a `Template` without creating
-/// an `Engine`.
-///
-/// # Examples
-///
-/// ```
-/// use ban::compile;
-///
-/// let template = compile("(( name ))");
-/// assert!(template.is_ok())
-/// ```
-pub fn compile<'source>(text: &'source str) -> Result<Template, Error> {
-    Parser::new(text).compile(None)
-}
+use crate::{log::Error, region::Region};
+
+use self::token::Token;
+
+const UNEXPECTED_TOKEN: &str = "unexpected token";
+const INVALID_SYNTAX: &str = "invalid syntax";
+
+pub type TokenResult = Result<Option<(Token, Region)>, Error>;
+pub type TokenResultMust = Result<(Token, Region), Error>;
 
 /// Keywords recognized by the Lexer and Parser.
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -41,12 +36,7 @@ pub enum Keyword {
     Let,
     /// Beginning of a loop.
     For,
-    /// Divides the identifier from the keys in a loop.
-    ///
-    /// In this example, identifier refers to "person" while keys
-    /// refers to "people":
-    ///
-    /// "for person in people"
+    /// Divides an identifier from a set of keys in a loop.
     In,
     /// Beginning of an include block.
     Include,
@@ -75,7 +65,7 @@ impl Display for Keyword {
     }
 }
 
-/// Operators recognized by the Lexer and Parser.
+/// Recognized logical operators.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Operator {
     /// +
@@ -115,4 +105,15 @@ impl Display for Operator {
             Operator::LesserOrEqual => write!(f, "<="),
         }
     }
+}
+
+/// Return a [`String`] describing an unexpected operator.
+fn expected_operator<T>(received: T) -> String
+where
+    T: Display,
+{
+    format!(
+        "expected operator like `+`, `-`, `*`, `/`, `==`, `!=`, `>=`, `<=`, found `{}`",
+        received
+    )
 }

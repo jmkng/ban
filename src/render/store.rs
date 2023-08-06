@@ -1,7 +1,9 @@
+use std::{collections::HashMap, fmt::Display};
+
 use crate::log::Error;
+
 use serde::Serialize;
 use serde_json::{to_value, Value};
-use std::{collections::HashMap, fmt::Display};
 
 /// Provides storage for data that a [`Template`][`crate::Template`] can be
 /// rendered with.

@@ -1,26 +1,33 @@
-use super::tree::{Base, Identifier, Mount};
-use crate::compile::tree::{CheckTree, Set};
 use std::fmt::Display;
+
+use crate::compile::tree::{IfTree, Set};
+
+use super::tree::{Base, Identifier, Mount};
 
 /// Represents a fragment of a larger expression.
 pub enum Fragment {
-    /// The first part of an "if" block, containing a [`CheckTree`].
-    If(CheckTree),
-    /// An additional [`CheckTree`] provided to a parent "if" block.
-    ElseIf(CheckTree),
+    /// The first part of an "if" block, containing a [`IfTree`].
+    If(IfTree),
+    /// An additional [`IfTree`] provided to a parent "if" block.
+    ElseIf(IfTree),
     /// A default value for a parent "if" block.
     Else,
-    /// The `(* for n in t *)` of a "for" Block.
+    /// The first part of an "if" block, containing a set of faux
+    /// scope variables and something to iterate over.
     For(Set, Base),
-    /// An assignment block - `(* let this = that *)`.
+    /// A "let" expression, used in assignment operations.
     Let(Identifier, Base),
-    /// An include block - `(* include base *)`.
+    /// An "include" expression, used to render other templates in place.
     Include(Base, Option<Mount>),
-    /// An extends block - `(* extends base *)`.
+    /// An "extends" expression, tells the `Renderer` handling the
+    /// `Template` to carry blocks up to a parent.
+    ///
+    /// Must be found at the top of a `Template`.
     Extends(Base),
-    /// TODO
+    /// A "block" expression, defines an area that can be overridden by
+    /// another extending template.
     Block(Base),
-    /// TODO
+    /// Closes a block.
     End,
 }
 

@@ -1,8 +1,6 @@
-use crate::{
-    compile::{Keyword, Operator},
-    Marker,
-};
 use std::fmt::Display;
+
+use crate::compile::{syntax::Marker, Keyword, Operator};
 
 /// Types emitted by the Lexer.
 ///
@@ -47,7 +45,7 @@ pub enum Token {
     Exclamation,
     /// :
     Colon,
-    /// A recognized "special" keyword that begins a certain type of block.
+    /// A recognized keyword that begins a certain type of block.
     Keyword(Keyword),
     /// Describes an action taken on two values.
     Operator(Operator),

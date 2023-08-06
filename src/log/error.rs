@@ -2,9 +2,7 @@ use super::{Pointer, RED, RESET};
 use crate::{log::Visual, region::Region};
 use std::fmt::{Debug, Display, Formatter, Result};
 
-/// An error type that provides a brief description of the error,
-/// and optionally supports adding more contextual "help" text and
-/// a visualization to illustrate the problem.
+/// Describes an error, and allows adding a contextual "help" text and visualization.
 ///
 /// # Examples
 ///
@@ -15,13 +13,10 @@ use std::fmt::{Debug, Display, Formatter, Result};
 ///     filter::{Error, Region, visual::Pointer}
 /// };
 ///
-/// let source = "(* update name *)";
-/// let region = Region::new(3..9);
-///
-/// let error = Error::build("unexpected keyword")
-///     .pointer(source, region)
-///     .template("template.txt")
-///     .help(r#"expected one of "if", "let", "for""#);
+/// Error::build("unexpected keyword")
+///     .with_pointer("(* update name *)", Region::new(3..9))
+///     .with_name("template.txt")
+///     .with_help(r#"expected one of "if", "let", "for""#);
 /// ```
 ///
 /// When printed with `println!("{:#}", error)` the [`Error`] produces this output:
@@ -43,24 +38,25 @@ pub struct Error {
     /// Additional information to display with the [`Error`].
     pub help: Option<String>,
     /// The name of the Template that the [`Error`] comes from.
-    pub template: Option<String>,
+    pub name: Option<String>,
 }
 
 impl Error {
-    /// Create a new Error.
-    pub fn new<T>(reason: T, template: T, help: T, visual: impl Visual + 'static) -> Self
+    /// Create a new [`Error`].
+    pub fn new<T, Y>(reason: T, template: T, help: T, visual: Y) -> Self
     where
         T: Into<String>,
+        Y: Visual + 'static,
     {
         Error {
             reason: reason.into(),
-            template: Some(template.into()),
+            name: Some(template.into()),
             visual: Some(Box::new(visual)),
             help: Some(help.into()),
         }
     }
 
-    /// Create a new [`Error`] with given reason text.
+    /// Create a new [`Error`] with the given reason text.
     ///
     /// The additional fields may be populated using the various methods
     /// defined on `Error`.
@@ -71,7 +67,7 @@ impl Error {
     /// use ban::filter::Error;
     ///
     /// Error::build("unexpected keyword")
-    ///     .help("expected `if`, `let` or `for`, found `...`");
+    ///     .with_help("expected `if`, `let` or `for`, found `...`");
     /// ```
     pub fn build<T>(reason: T) -> Self
     where
@@ -79,35 +75,58 @@ impl Error {
     {
         Error {
             reason: reason.into(),
-            template: None,
+            name: None,
             visual: None,
             help: None,
         }
     }
 
     /// Set the reason text, which is a short summary of the [`Error`].
-    pub fn reason<T>(mut self, text: T) -> Self
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::filter::Error;
+    ///
+    /// // Reason text begins as an empty string, but is immediately
+    /// // updated to "something else":
+    /// let mut error = Error::build("")
+    ///     .with_reason("something else");
+    /// ```
+    pub fn with_reason<T>(mut self, text: T) -> Self
     where
         T: Into<String>,
     {
         self.reason = text.into();
+
         self
     }
 
-    /// Set the [`Template`][`crate::Template`] text, which is the name of the template
-    /// that the error is related to.
-    pub fn template<T>(mut self, text: T) -> Self
+    /// Set the name text, which is the name of the [`Template`][`crate::Template`]
+    /// that the [`Error`] is related to.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::filter::Error;
+    ///
+    /// let mut error = Error::build("unexpected keyword")
+    ///     .with_reason("something else");
+    /// ```
+    pub fn with_name<T>(mut self, text: T) -> Self
     where
         T: Into<String>,
     {
-        self.template = Some(text.into());
+        self.name = Some(text.into());
+
         self
     }
 
     /// Set the [`Visual`], which is a visualization that helps illustrate the
     /// cause of the error.
-    pub fn visual(mut self, visual: impl Visual + 'static) -> Self {
+    pub fn with_visual(mut self, visual: impl Visual + 'static) -> Self {
         self.visual = Some(Box::new(visual));
+
         self
     }
 
@@ -120,7 +139,7 @@ impl Error {
     /// ```text
     /// ...
     /// error
-    ///     .pointer(source, 1..2)
+    ///     .visual(Pointer::new(source, (1..2).into()))
     /// ...
     ///
     /// // becomes:
@@ -128,27 +147,29 @@ impl Error {
     /// error
     ///     .pointer(source, (1..2).into())
     /// ```
-    pub fn pointer<T>(mut self, source: &str, region: T) -> Self
+    pub fn with_pointer<T>(mut self, source: &str, region: T) -> Self
     where
         T: Into<Region>,
     {
         self.visual = Some(Box::new(Pointer::new(source, region.into())));
+
         self
     }
 
-    /// Set the help text, which is some additional contextual information
-    /// to accompany the reason text which further describes the error.
-    pub fn help<T>(mut self, text: T) -> Self
+    /// Set the help text, which is contextual information to accompany the
+    /// reason text.
+    pub fn with_help<T>(mut self, text: T) -> Self
     where
         T: Into<String>,
     {
         self.help = Some(text.into());
+
         self
     }
 
-    /// Return true if the [`Template`] has a name.
+    /// Return true if the [`Error`] has a name.
     pub fn is_named(&self) -> bool {
-        self.template.is_some()
+        self.name.is_some()
     }
 }
 
@@ -159,10 +180,11 @@ impl Debug for Error {
         }
         f.debug_struct("Error")
             .field("reason", &self.reason)
-            .field("template", &self.template)
+            .field("name", &self.name)
             .field("visual", &self.visual)
             .field("help", &self.help)
             .finish()?;
+
         Ok(())
     }
 }
@@ -175,7 +197,7 @@ impl Display for Error {
         if self.visual.is_some() && f.alternate() {
             return self.visual.as_ref().unwrap().display(
                 f,
-                self.template.as_deref(),
+                self.name.as_deref(),
                 self.help.as_deref(),
             );
         }
@@ -186,6 +208,6 @@ impl Display for Error {
 
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
-        self.reason == other.reason && self.help == other.help && self.template == other.template
+        self.reason == other.reason && self.help == other.help && self.name == other.name
     }
 }

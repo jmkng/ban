@@ -4,35 +4,32 @@ pub mod tree;
 mod fragment;
 mod state;
 
-use crate::{
-    compile::{
-        lex::{token::Token, LexResult, LexResultMust, Lexer},
-        parse::{
-            fragment::Fragment,
-            state::{BlockState, CheckState},
-            tree::*,
-        },
-        Keyword, Operator, Scope, Template,
+use crate::{log::Error, region::Region};
+
+use super::{
+    expected_operator,
+    lex::{token::Token, Lexer},
+    parse::{
+        fragment::Fragment,
+        state::{BlockState, IfState},
+        tree::*,
     },
-    log::{
-        message::{
-            error_eof, expected_operator, INVALID_SYNTAX, UNEXPECTED_BLOCK, UNEXPECTED_EOF,
-            UNEXPECTED_TOKEN,
-        },
-        Error,
-    },
-    region::Region,
+    Keyword, Operator, Scope, Template, TokenResult, TokenResultMust, INVALID_SYNTAX,
+    UNEXPECTED_TOKEN,
 };
+
+use morel::Finder;
 use serde_json::{Number, Value};
+
+const UNEXPECTED_BLOCK: &str = "unexpected block";
+const UNEXPECTED_EOF: &str = "unexpected eof";
 
 /// Provides methods to transform an input stream of [`Token`] into an abstract
 /// syntax tree composed of [`Tree`].
 pub struct Parser<'source> {
-    /// `Lexer` used to pull from source as tokens instead of raw text.
+    /// [`Lexer`] used to read [`Token`] instances from the source.
     lexer: Lexer<'source>,
-    /// Store peeked tokens.
-    ///
-    /// Double option is used to remember when the next token is None.
+    /// Store a peeked [`Token`] instance.
     buffer: Option<Option<(Token, Region)>>,
     /// Temporarily store an [`Extends`] for the [`Template`] that is being
     /// parsed.
@@ -40,11 +37,11 @@ pub struct Parser<'source> {
 }
 
 impl<'source> Parser<'source> {
-    /// Create a new `Parser` from the given string.
+    /// Create a new [`Parser`] from the given string and [`Syntax`].
     #[inline]
-    pub fn new(source: &'source str) -> Self {
+    pub fn new(source: &'source str, finder: &'source Finder) -> Self {
         Self {
-            lexer: Lexer::new(source),
+            lexer: Lexer::new(source, finder),
             buffer: None,
             extended: None,
         }
@@ -54,6 +51,10 @@ impl<'source> Parser<'source> {
     ///
     /// Returns a new `Template`, which can be executed with some [`Store`][`crate::Store`]
     /// data to receive output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when syntax leading to an invalid `Template` is found.
     pub fn compile(mut self, name: Option<String>) -> Result<Template, Error> {
         // Temporary storage for fragments of larger blocks.
         let mut states: Vec<BlockState> = vec![];
@@ -71,37 +72,17 @@ impl<'source> Parser<'source> {
 
         while let Some(next) = self.next()? {
             let tree = match next {
-                // Raw text.
-                //
-                // Expected:
-                //
-                // ...
                 (Token::Raw, region) => Tree::Raw(region),
-                // Beginning of an expression.
-                //
-                // Expected:
-                //
-                // BASE [FILTER ...] ...
                 (Token::BeginExpression, region) => {
                     let expression = self.parse_expression()?;
                     let end = self.next_must(Token::EndExpression)?.1.combine(region);
                     Tree::Output(Output::from((expression, end)))
                 }
-                // Beginning of a block.
-                //
-                // Expected:
-                //
-                // KEYWORD ...
                 (Token::BeginBlock, region) => {
                     let fragment = self.parse_fragment()?;
                     let end = self.next_must(Token::EndBlock)?.1.combine(region);
 
                     match fragment {
-                        // Beginning of an "if" block.
-                        //
-                        // Expected:
-                        //
-                        // [ELSE IF ...] | [ELSE] | END ...
                         Fragment::If(tr) => {
                             states.push(BlockState::If {
                                 else_if: false,
@@ -112,16 +93,11 @@ impl<'source> Parser<'source> {
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // An "else if" fragment of an "if" block.
-                        //
-                        // Expected:
-                        //
-                        // [ELSE IF ...] | [ELSE] | END ...
                         Fragment::ElseIf(tr) => {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
-                                    .pointer(self.lexer.source, end)
-                                    .help("expected `if` before `else if`")
+                                    .with_pointer(self.lexer.source, end)
+                                    .with_help("expected `if` before `else if`")
                             };
 
                             match states.last_mut().ok_or_else(error)? {
@@ -143,16 +119,11 @@ impl<'source> Parser<'source> {
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // An "else" fragment of an "if" block.
-                        //
-                        // Expected:
-                        //
-                        // END ...
                         Fragment::Else => {
                             let error = || {
                                 Error::build(UNEXPECTED_BLOCK)
-                                    .pointer(self.lexer.source, end)
-                                    .help("expected `if` before `else`")
+                                    .with_pointer(self.lexer.source, end)
+                                    .with_help("expected `if` before `else`")
                             };
 
                             match states.last_mut().ok_or_else(error)? {
@@ -166,66 +137,34 @@ impl<'source> Parser<'source> {
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // Beginning of an "for" block.
-                        //
-                        // Expected:
-                        //
-                        // BASE [,] [BASE] IN BASE END ...
                         Fragment::For(set, base) => {
                             states.push(BlockState::For { set, base, region });
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // A "let" expression.
-                        //
-                        // Expected:
-                        //
-                        // BASE ASSIGN BASE ...
                         Fragment::Let(left, right) => Tree::Let(Let { left, right }),
-                        // An "include" expression.
-                        //
-                        // Expected:
-                        //
-                        // BASE [BASE] ...
                         Fragment::Include(name, mount) => Tree::Include(Include { name, mount }),
-                        // An "extends" expression.
-                        //
-                        // Expected:
-                        //
-                        // ...
                         Fragment::Extends(name) => {
                             if scopes.len() != 1 || !scopes.first().unwrap().data.is_empty() {
                                 return Err(Error::build(UNEXPECTED_BLOCK)
-                                    .pointer(&self.lexer.source, end)
-                                    .help("block `extend` must appear at top of template"));
+                                    .with_pointer(&self.lexer.source, end)
+                                    .with_help("block `extend` must appear at top of template"));
                             }
 
                             self.extended = Some(Extends { name, region: end });
                             continue;
                         }
-                        // A "block" block.
-                        //
-                        // Expected:
-                        //
-                        // END ...
                         Fragment::Block(name) => {
                             states.push(BlockState::Block { name, region: end });
                             scopes.push(Scope::new());
                             continue;
                         }
-                        // An "end" expression.
-                        //
-                        // Expected:
-                        //
-                        // ...
-                        Fragment::End => {
-                            match states.last() {
-                                Some(parent) => match parent {
-                                    // TODO
-                                    BlockState::If { .. } => loop {
-                                        match states.pop().ok_or_else(|| Error::build(INVALID_SYNTAX)
-                                                .pointer(self.lexer.source, end)
-                                                .help("`if` block does not appear to have a beginning"))? {
+                        Fragment::End => match states.last() {
+                            Some(parent) => match parent {
+                                BlockState::If { .. } => loop {
+                                    match states.pop().ok_or_else(|| Error::build(INVALID_SYNTAX)
+                                                .with_pointer(self.lexer.source, end)
+                                                .with_help("`if` block does not appear to have a beginning"))? {
                                             BlockState::If {
                                                 else_if,
                                                 tree,
@@ -234,7 +173,6 @@ impl<'source> Parser<'source> {
                                             } => {
                                                 let else_branch = has_else.then(|| scopes.pop().unwrap());
                                                 let then_branch = scopes.pop().unwrap();
-
                                                 let tree = Tree::If(If {
                                                     tree,
                                                     else_branch,
@@ -248,42 +186,38 @@ impl<'source> Parser<'source> {
                                                 scopes.last_mut().unwrap().data.push(tree);
                                             }
                                             _ => return Err(Error::build(INVALID_SYNTAX)
-                                                .pointer(self.lexer.source, end)
-                                                .help("expected `if` expressions above this point, \
+                                                .with_pointer(self.lexer.source, end)
+                                                .with_help("expected `if` expressions above this point, \
                                                     did you attempt to start a different block before closing this `if`?")),
                                         }
-                                    },
-                                    // TODO
-                                    BlockState::For { .. } => match states.pop().unwrap() {
-                                        BlockState::For { set, base, region } => Tree::For(For {
-                                            set,
-                                            base,
-                                            scope: scopes.pop().unwrap(),
-                                            region: end.combine(region),
-                                        }),
-                                        _ => unreachable!(),
-                                    },
-                                    // TODO
-                                    BlockState::Block { .. } => match states.pop().unwrap() {
-                                        BlockState::Block { name, region } => Tree::Block(Block {
-                                            name,
-                                            scope: scopes.pop().unwrap(),
-                                            region: end.combine(region),
-                                        }),
-                                        _ => unreachable!(),
-                                    },
                                 },
-                                None => {
-                                    return Err(Error::build(
-                                        "unexpected `end` expression, you must begin a `block`, \
-                                    `for` or `if` first.",
-                                    ))
-                                }
+                                BlockState::For { .. } => match states.pop().unwrap() {
+                                    BlockState::For { set, base, region } => Tree::For(For {
+                                        set,
+                                        base,
+                                        scope: scopes.pop().unwrap(),
+                                        region: end.combine(region),
+                                    }),
+                                    _ => unreachable!(),
+                                },
+                                BlockState::Block { .. } => match states.pop().unwrap() {
+                                    BlockState::Block { name, region } => Tree::Block(Block {
+                                        name,
+                                        scope: scopes.pop().unwrap(),
+                                        region: end.combine(region),
+                                    }),
+                                    _ => unreachable!(),
+                                },
+                            },
+                            None => {
+                                return Err(Error::build(
+                                    "unexpected `end` expression, you must open a block first.",
+                                ))
                             }
-                        }
+                        },
                     }
                 }
-                _ => unreachable!("lexer will abort without begin block"),
+                _ => unreachable!("lexer must abort without begin block"),
             };
 
             scopes.last_mut().unwrap().data.push(tree);
@@ -295,12 +229,13 @@ impl<'source> Parser<'source> {
                 BlockState::For { region, .. } => ("for", region),
                 BlockState::Block { region, .. } => ("block", region),
             };
-            return Err(Error::build(INVALID_SYNTAX)
-                .pointer(self.lexer.source, *region)
-                .help(format!("did you close the `{block}` with `end`?")));
-        }
 
+            return Err(Error::build(INVALID_SYNTAX)
+                .with_pointer(self.lexer.source, *region)
+                .with_help(format!("did you close the `{block}` with `end`?")));
+        }
         assert!(scopes.len() == 1, "must have single scope");
+
         Ok(Template {
             name,
             scope: scopes.remove(0),
@@ -313,6 +248,11 @@ impl<'source> Parser<'source> {
     ///
     /// A `Fragment` may encompass an entire expression, such as the "extends" expression,
     /// or may represent a smaller part of a larger block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, or no `Token`
+    /// instances are left.
     fn parse_fragment(&mut self) -> Result<Fragment, Error> {
         //   from                to
         //   |                   |
@@ -320,12 +260,10 @@ impl<'source> Parser<'source> {
         let (keyword, region) = self.parse_keyword()?;
 
         match keyword {
-            // TODO
             Keyword::If => {
                 let tree = self.parse_tree()?;
                 Ok(Fragment::If(tree))
             }
-            // TODO
             Keyword::Else => {
                 if self.peek_is(Token::Keyword(Keyword::If))? {
                     self.next_must(Token::Keyword(Keyword::If))?;
@@ -335,71 +273,75 @@ impl<'source> Parser<'source> {
                     Ok(Fragment::Else)
                 }
             }
-            // TODO
             Keyword::For => {
                 let variables = self.parse_set()?;
                 self.next_must(Token::Keyword(Keyword::In))?;
                 let base = self.parse_base()?;
                 Ok(Fragment::For(variables, base))
             }
-            // TODO
             Keyword::Let => {
                 let left = self.parse_identifier()?;
                 self.next_must(Token::Assign)?;
                 let right = self.parse_base()?;
                 Ok(Fragment::Let(left, right))
             }
-            // TODO
             Keyword::Include => {
                 let name = self.parse_base()?;
                 let scope = self.parse_mount()?;
                 Ok(Fragment::Include(name, scope))
             }
-            // TODO
             Keyword::Extends => {
                 let name = self.parse_base()?;
                 Ok(Fragment::Extends(name))
             }
-            // TODO
             Keyword::Block => {
                 let name = self.parse_base()?;
                 Ok(Fragment::Block(name))
             }
-            // TODO
             Keyword::End => Ok(Fragment::End),
-            // TODO
             k @ Keyword::Not | k @ Keyword::In => Err(Error::build(UNEXPECTED_TOKEN)
-                .pointer(self.lexer.source, region)
-                .help(format!("keyword `{k}` is not valid in this position"))),
+                .with_pointer(self.lexer.source, region)
+                .with_help(format!("keyword `{k}` is not valid in this position"))),
         }
     }
 
     /// Parse a [`Mount`].
     ///
-    /// Similar to `.parse_arguments`, but requires that all arguments
-    /// are named.
+    /// Similar to `.parse_arguments`, but requires that all arguments are named.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, any of the [`Argument`] instances
+    /// are not named, or no `Token` instances are left.
     fn parse_mount(&mut self) -> Result<Option<Mount>, Error> {
-        // "(* include "header" title: site.title *)"
-        //                     ^-----------------^
-        //                     from              to
+        // "(* include "header" title: site.title, date: "01-01-22" *)"
+        //                      -----------------| ---------------- ...
+        //                          argument 1   |    argument 2
+        //                     ^-----------------|-----------------^
+        //                     from              |                 to
+        //                                    separator
         let mut values: Vec<Point> = vec![];
 
         while !self.peek_is(Token::EndBlock)? {
             let argument = self.parse_argument()?;
+
             if argument.name.is_none() {
                 return Err(Error::build(INVALID_SYNTAX)
-                    .pointer(self.lexer.source, argument.value.get_region())
-                    .help(format!(
-                        "arguments in an `include` block must be named, \
-                        try `[name: ]{}`",
+                    .with_pointer(self.lexer.source, argument.value.get_region())
+                    .with_help(format!(
+                        "arguments in `include` expression must be named, try `[name: ]{}`",
                         argument.value.get_region().literal(self.lexer.source)
                     )));
             }
-
             values.push(Point {
                 name: argument.name.unwrap(),
                 value: argument.value,
-            })
+            });
+
+            if !self.peek_is(Token::Comma)? {
+                break;
+            }
+            self.next_must(Token::Comma)?;
         }
         if values.is_empty() {
             return Ok(None);
@@ -419,6 +361,11 @@ impl<'source> Parser<'source> {
     ///
     /// An `Expression` is a call to render some kind of data,
     /// and may contain one or more "filters" which are used to modify the output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, or no `Token`
+    /// instances are left.
     fn parse_expression(&mut self) -> Result<Expression, Error> {
         // (( name | prepend 1: "hello, " | append "!" | upper ))
         //   |                                                |
@@ -448,86 +395,86 @@ impl<'source> Parser<'source> {
         Ok(expression)
     }
 
-    /// Parse a [`CheckTree`].
+    /// Parse an [`IfTree`].
     ///
-    /// This `CheckTree` will contain all of the information necessary
-    /// to determine if the block should pass.
-    fn parse_tree(&mut self) -> Result<CheckTree, Error> {
+    /// This `IfTree` will contain all of the information necessary to determine if the
+    /// block should pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, or no `Token`
+    /// instances are left.
+    fn parse_tree(&mut self) -> Result<IfTree, Error> {
         // this >= that && these == those || a == b *)
-        // ------------    --------------    ------
-        // from  |                  |            |  to
+        // |-----------    --------------    ------ to
+        // from  |                  |            |
         //       negatable          negatable    negatable
-        let mut tree = CheckTree::new();
-        let mut state = CheckState::default();
+        let mut tree = IfTree::new();
+        let mut state = IfState::default();
 
         loop {
             match state {
-                // Parse a `Base` and assign it to either "left" or "right"
-                // on the latest `Check` instance.
-                CheckState::Base(has_left) => {
+                IfState::Base(has_left) => {
                     if has_left {
                         let base = self.parse_base()?;
-                        tree.last_check_mut_must("has_left implies that a check exists")
+                        tree.last_leaf_mut_must("has_left implies that a leaf exists")
                             .right = Some(base);
 
-                        state = CheckState::Transition;
+                        state = IfState::Transition;
                     } else {
                         let (base, negated) = if self.peek_is(Token::Keyword(Keyword::Not))? {
                             self.next_must(Token::Keyword(Keyword::Not))?;
+
                             (self.parse_base()?, true)
                         } else {
                             (self.parse_base()?, false)
                         };
-                        tree.last_mut_must().push(Check::new(base, negated));
+                        tree.last_mut_must().push(IfLeaf::new(base, negated));
 
-                        state = CheckState::Operator;
+                        state = IfState::Operator;
                     };
                 }
-                // Parse an `Operator` for the `Check`.
-                //
-                // Set state to CompareState::Transition if something like "&&", "||"
-                // or Token::EndBlock shows up.
-                CheckState::Operator => match self.peek_must()? {
+                IfState::Operator => match self.peek_must()? {
                     (token, region) => match token {
-                        Token::EndBlock | Token::Or | Token::And => state = CheckState::Transition,
+                        Token::EndBlock | Token::Or | Token::And => state = IfState::Transition,
                         Token::Operator(op) => {
                             self.next_must(Token::Operator(op))?;
-                            tree.last_check_mut_must("operator state implies that check exists")
+                            tree.last_leaf_mut_must("operator state implies that leaf exists")
                                 .operator = Some(op);
-                            state = CheckState::Base(true);
+                            state = IfState::Base(true);
                         }
                         unexpected => {
                             return Err(Error::build(UNEXPECTED_TOKEN)
-                                .pointer(self.lexer.source, region)
-                                .help(expected_operator(unexpected)))
+                                .with_pointer(self.lexer.source, region)
+                                .with_help(expected_operator(unexpected)))
                         }
                     },
                 },
-                // Handle "&&", "||" and `Token::EndBlock`.
-                CheckState::Transition => match self.peek_must()? {
+                IfState::Transition => match self.peek_must()? {
                     (Token::EndBlock, _) => break,
                     (Token::Or, _) => {
                         self.next_must(Token::Or)?;
-                        // Split up the `Path`.
+
                         tree.split_branch();
-                        state = CheckState::Base(false);
+                        state = IfState::Base(false);
                     }
                     (Token::And, _) => {
                         self.next_must(Token::And)?;
-                        // Start a new `Check`, which requires a `Base`.
+
                         let (base, negated) = if self.peek_is(Token::Keyword(Keyword::Not))? {
                             self.next_must(Token::Keyword(Keyword::Not))?;
                             (self.parse_base()?, true)
                         } else {
                             (self.parse_base()?, false)
                         };
-                        tree.split_check(Check::new(base, negated));
-                        state = CheckState::Operator;
+
+                        tree.split_leaf(IfLeaf::new(base, negated));
+                        state = IfState::Operator;
                     }
                     unexpected => {
                         return Err(Error::build(UNEXPECTED_TOKEN)
-                            .pointer(self.lexer.source, unexpected.1)
-                            .help(format!(
+                            .with_pointer(self.lexer.source, unexpected.1)
+                            .with_help(format!(
                                 "expected `{}`, `{}` or end of block, found `{}`",
                                 Token::And,
                                 Token::Or,
@@ -572,11 +519,11 @@ impl<'source> Parser<'source> {
         match self.next_any_must()? {
             (Token::Keyword(keyword), region) => Ok((keyword, region)),
             (token, region) => Err(Error::build(UNEXPECTED_TOKEN)
-                .help(format!(
+                .with_help(format!(
                     "expected keyword like `if`, `else`, `let`, `for`, `in`, `include`, \
                     `extends`, `block`, `end`, found `{token}`"
                 ))
-                .pointer(self.lexer.source, region)),
+                .with_pointer(self.lexer.source, region)),
         }
     }
 
@@ -586,8 +533,8 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Propagates any errors that occur while parsing a [`Base`]
-    /// for the argument(s).
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, or no `Token`
+    /// instances are left.
     fn parse_arguments(&mut self) -> Result<Option<Arguments>, Error> {
         // "hello (( name | prepend 1: "hello, " | append "!", "?" | upper ))"
         //                         ^------------^        ^--------^
@@ -618,16 +565,15 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if a valid `Argument` cannot be made
-    /// with the next tokens.
+    /// Returns an [`Error`] if a valid `Argument` cannot be made with the next tokens.
     fn parse_argument(&mut self) -> Result<Argument, Error> {
         let name_or_value = self.parse_base()?;
 
         // Named argument.
         if self.peek_is(Token::Colon)? {
             self.next_must(Token::Colon)?;
-
             let value = self.parse_base()?;
+
             return Ok(Argument {
                 name: Some(name_or_value.get_region()),
                 value,
@@ -648,17 +594,16 @@ impl<'source> Parser<'source> {
     /// Returns an [`Error`] if the next token is not an [`Identifier`].
     fn parse_identifier(&mut self) -> Result<Identifier, Error> {
         let (_, region) = self.next_must(Token::Identifier)?;
+
         Ok(Identifier { region })
     }
 
     /// Parse a [`Base`].
     ///
-    /// A `Base` may be "negated", but this function is only responsible for
-    /// parsing the `Base` itself, and so returns a `Base` with the "negate"
-    /// property set to false.
+    /// # Errors
     ///
-    /// To parse a `Base` while checking for a negation operator, instead use
-    /// [`parse_base_negated`].
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, or no `Token`
+    /// instances are left.
     fn parse_base(&mut self) -> Result<Base, Error> {
         let expression = match self.next_any_must()? {
             (Token::False, region) => Base::Literal(Literal {
@@ -672,13 +617,10 @@ impl<'source> Parser<'source> {
             (Token::Operator(operator), region) => match operator {
                 Operator::Add | Operator::Subtract => {
                     let (_, next_region) = self.next_must(Token::Number)?;
-
-                    // -1000 | +1000  <- valid, negative/positive numbers
-                    // - 1000 | + 1000<- invalid
                     if !region.is_neighbor(next_region) {
                         return Err(Error::build(UNEXPECTED_TOKEN)
-                            .pointer(self.lexer.source, region.combine(next_region))
-                            .help(format!(
+                            .with_pointer(self.lexer.source, region.combine(next_region))
+                            .with_help(format!(
                                 "remove the separating whitespace to make `{}` a negative number",
                                 &self.lexer.source[next_region],
                             )));
@@ -690,8 +632,8 @@ impl<'source> Parser<'source> {
                 }
                 _ => {
                     return Err(Error::build(UNEXPECTED_TOKEN)
-                        .pointer(self.lexer.source, region)
-                        .help(format!(
+                        .with_pointer(self.lexer.source, region)
+                        .with_help(format!(
                             "only `{}` or `{}` operators to indicate a positive or negative \
                             numbers are valid here",
                             Operator::Add,
@@ -719,8 +661,8 @@ impl<'source> Parser<'source> {
             (token, region) => {
                 println!("{}", token);
                 return Err(Error::build(UNEXPECTED_TOKEN)
-                    .pointer(self.lexer.source, region)
-                    .help(format!(
+                    .with_pointer(self.lexer.source, region)
+                    .with_help(format!(
                         "expected a variable or identifier, found `{}`",
                         token
                     )));
@@ -735,10 +677,10 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Propagates any errors that occur while parsing a literal string,
-    /// which may be caused by an unrecognized escape character.
+    /// Returns an [`Error`] when an unexpected [`Token`] is found.
     fn parse_string_literal(&mut self, region: Region) -> Result<Literal, Error> {
         let value = Value::String(self.parse_string(region)?);
+
         Ok(Literal { value, region })
     }
 
@@ -746,13 +688,13 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the next token is not a valid [`Identifier`].
+    /// Returns an [`Error`] if the next token is not a valid [`Identifier`].
     fn parse_key(&mut self) -> Result<Identifier, Error> {
         match self.next_any_must()? {
             (Token::Identifier, region) => Ok(Identifier { region }),
             (_, region) => Err(Error::build(UNEXPECTED_TOKEN)
-                .pointer(self.lexer.source, region)
-                .help("expected an unquoted identifier such as `one.two`")),
+                .with_pointer(self.lexer.source, region)
+                .with_help("expected an unquoted identifier such as `one.two`")),
         }
     }
 
@@ -760,7 +702,7 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an error if an unrecognized escape character is found.
+    /// Returns an [`Error`] if an unrecognized escape character is found.
     fn parse_string(&self, region: Region) -> Result<String, Error> {
         let window = region.literal(self.lexer.source);
         let string = if window.contains('\\') {
@@ -780,7 +722,7 @@ impl<'source> Parser<'source> {
                             '"' => '"',
                             _ => {
                                 return Err(Error::build("unexpected escape character")
-                                    .pointer(self.lexer.source, region))
+                                    .with_pointer(self.lexer.source, region))
                             }
                         };
                         string.push(c);
@@ -800,13 +742,13 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the literal value of the `Region` cannot be converted
+    /// Returns an [`Error`] if the literal value of the `Region` cannot be converted
     /// to a [`Value::Number`].
     fn parse_number_literal(&self, window: &str, region: Region) -> Result<Literal, Error> {
         let as_number: Number = window.parse().map_err(|_| {
             Error::build("unrecognizable number")
-                .pointer(self.lexer.source, region)
-                .help(format!(
+                .with_pointer(self.lexer.source, region)
+                .with_help(format!(
                     "numbers may begin with `{}` to indicate a negative \
                     number and must not end with a decimal",
                     Operator::Subtract
@@ -820,8 +762,8 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Propagates any error returned by the underlying Lexer.
-    fn peek(&mut self) -> LexResult {
+    /// Returns an [`Error`] when an unexpected [`Token`] is found.
+    fn peek(&mut self) -> TokenResult {
         if let o @ None = &mut self.buffer {
             *o = Some(self.lexer.next()?);
         }
@@ -833,9 +775,9 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the [`Lexer`] returns [`None`], or when the `Lexer` returns
+    /// Returns an [`Error`] if the [`Lexer`] returns [`None`], or when the `Lexer` returns
     /// an error itself.
-    fn peek_must(&mut self) -> LexResultMust {
+    fn peek_must(&mut self) -> TokenResultMust {
         let peek = self.peek()?;
         if peek.is_none() {
             return Err(error_eof(self.lexer.source));
@@ -848,7 +790,7 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Propagates any errors reported by the underlying [`Lexer`].
+    /// Returns an [`Error`] when an unexpected [`Token`] is found.
     fn peek_is(&mut self, expect: Token) -> Result<bool, Error> {
         Ok(self
             .peek()?
@@ -860,7 +802,11 @@ impl<'source> Parser<'source> {
     ///
     /// Prefers to pull a `Token` from the internal buffer first, but will pull from
     /// the [`Lexer`] when the buffer is empty.
-    fn next(&mut self) -> LexResult {
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] when an unexpected [`Token`] is found.
+    fn next(&mut self) -> TokenResult {
         match self.buffer.take() {
             Some(t) => Ok(t),
             None => self.lexer.next(),
@@ -871,36 +817,35 @@ impl<'source> Parser<'source> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the next `Token` does not match the given `Token`,
-    /// or none are left.
-    fn next_must(&mut self, expect: Token) -> LexResultMust {
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, or no `Token`
+    /// instances are left.
+    fn next_must(&mut self, expect: Token) -> TokenResultMust {
         match self.next()? {
             Some((token, region)) => {
                 if token == expect {
                     Ok((token, region))
                 } else {
                     Err(Error::build(UNEXPECTED_TOKEN)
-                        .pointer(self.lexer.source, region)
-                        .help(format!("expected `{expect}`")))
+                        .with_pointer(self.lexer.source, region)
+                        .with_help(format!("expected `{expect}`")))
                 }
             }
             None => {
                 let source_len = self.lexer.source.len();
                 Err(Error::build(UNEXPECTED_EOF)
-                    .pointer(self.lexer.source, source_len..source_len)
-                    .help(format!("expected `{expect}`")))
+                    .with_pointer(self.lexer.source, source_len..source_len)
+                    .with_help(format!("expected `{expect}`")))
             }
         }
     }
 
     /// Get the next [`Token`].
     ///
-    /// Similar to [`next`][`Parser::next`] but requires that a token is returned.
-    ///
     /// # Errors
     ///
-    /// Returns an error if no tokens are left.
-    fn next_any_must(&mut self) -> LexResultMust {
+    /// Returns an [`Error`] when an unexpected [`Token`] is found, or no `Token`
+    /// instances are left.
+    fn next_any_must(&mut self) -> TokenResultMust {
         match self.next()? {
             Some((token, region)) => Ok((token, region)),
             None => Err(error_eof(self.lexer.source)),
@@ -908,17 +853,33 @@ impl<'source> Parser<'source> {
     }
 }
 
+/// Return an [`Error`] describing an unexpected end of file.
+fn error_eof(source: &str) -> Error {
+    let source_len = source.len();
+    Error::build(UNEXPECTED_EOF)
+        .with_pointer(source, source_len..source_len)
+        .with_help("expected additional tokens, did you close all blocks and expressions?")
+}
+
 #[cfg(test)]
 mod tests {
+    use morel::Finder;
+
+    use crate::{
+        compile::{lex::token::Token, tree::Set},
+        engine::new_finder_default,
+        region::Region,
+    };
+
     use super::{
         tree::{Expression, Tree},
         Parser,
     };
-    use crate::compile::{lex::token::Token, tree::Set};
 
     #[test]
     fn test_parser_lexer_integration() {
-        let mut parser = Parser::new("hello");
+        let finder = new_finder_default();
+        let mut parser = Parser::new("hello", &finder);
 
         assert_eq!(parser.next(), Ok(Some((Token::Raw, (0..5).into()))));
         assert_eq!(parser.next(), Ok(None));
@@ -927,7 +888,9 @@ mod tests {
     #[test]
     fn test_parse_expression_with_call() {
         let source = r#"hello (( name | prepend text: "hello, " | append "!", "?" | upper ))"#;
-        let template = Parser::new(source).compile(None).unwrap();
+        let template = Parser::new(source, &new_finder_default())
+            .compile(None)
+            .unwrap();
 
         let mut iterator = template.scope.data.iter();
         iterator.next();
@@ -966,15 +929,19 @@ mod tests {
         let source = "balance: (( - 1000 ))";
         //                         ^-- remove whitespace for negative num
 
-        assert!(Parser::new(source).compile(None).is_err());
+        assert!(Parser::new(source, &new_finder_default())
+            .compile(None)
+            .is_err());
     }
 
     #[test]
     fn test_peek_multiple() {
-        let mut parser = Parser::new("(( one two");
+        let finder = new_finder_default();
+        let mut parser = Parser::new("(( one two", &finder);
+
+        assert!(parser.next().is_ok());
 
         // Multiple calls to peek should return the same thing.
-        assert!(parser.next().is_ok());
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
         assert_eq!(parser.peek(), Ok(Some((Token::Identifier, (3..6).into()))));
@@ -982,15 +949,16 @@ mod tests {
 
     #[test]
     fn test_parse_tree_valid() {
+        let finder = new_finder_default();
         //                                                    --- negated
         let source = "(* if this >= that && these == those || not is_admin *)";
         //                  ------------    --------------    ------------
-        //                     Check 1          Check 2          Check 1
+        //                     Leaf 1           Leaf 2           Leaf 1
         //                  ------------------------------    ------------
-        //                             Branch 1                  Branch 2
+        //                              Branch 1                 Branch 2
         //                  ----------------------------------------------
         //                                         Tree
-        let result = get_parser_n(source, 2).parse_tree().unwrap();
+        let result = get_parser_n(source, &finder, 2).parse_tree().unwrap();
 
         assert_eq!(result.branches.len(), 2);
         assert_eq!(result.branches.first().unwrap().len(), 2);
@@ -999,7 +967,8 @@ mod tests {
 
     #[test]
     fn test_parse_tree_missing_base() {
-        let mut parser = get_parser_n("(* if this >= *)", 2);
+        let finder = new_finder_default();
+        let mut parser = get_parser_n("(* if this >= *)", &finder, 2);
         //                                          ^-- expected `Base` here
 
         assert!(parser.parse_tree().is_err());
@@ -1007,7 +976,8 @@ mod tests {
 
     #[test]
     fn test_parse_tree_bad_operator() {
-        let mut parser = get_parser_n("(* if this = that *)", 2);
+        let finder = new_finder_default();
+        let mut parser = get_parser_n("(* if this = that *)", &finder, 2);
         //                                        ^-- did you mean `==`?
 
         assert!(parser.parse_tree().is_err());
@@ -1015,10 +985,11 @@ mod tests {
 
     #[test]
     fn test_parse_set_pair() {
+        let finder = new_finder_default();
         //                         ---- identifier 2
         let source = "(* for this, that in thing *)hello(* end *)";
         //      identifier 1 ----     base -----   ----- scope
-        let result = get_parser_n(source, 2).parse_set().unwrap();
+        let result = get_parser_n(source, &finder, 2).parse_set().unwrap();
 
         match result {
             Set::Pair(pa) => {
@@ -1026,24 +997,33 @@ mod tests {
                 assert_eq!(pa.value.region.literal(source), "that");
                 assert_eq!(pa.region.literal(source), "this, that");
             }
-            _ => panic!("two variables should create a pair"),
+            _ => panic!("two identifiers must create pair"),
         }
     }
 
     #[test]
     fn test_parse_mount() {
-        //                                    -------- name
-        let result = get_parser_n("(* include \"base\" x: data.related *)", 3).parse_mount();
-        //                                             --------------- mount
+        let finder = new_finder_default();
+        //                                        -------- name
+        let mut parser = get_parser_n("(* include \"base\" x: abc, y: def *)", &finder, 3);
+        //                                                 -------------- mount
+        let result = parser.parse_mount();
+        let mount = result.unwrap().unwrap();
 
-        assert!(result.is_ok_and(|t| t.is_some()));
+        assert_eq!(mount.values.len(), 2);
+        assert_eq!(
+            parser.next(),
+            Ok(Some((Token::EndBlock, Region { begin: 33, end: 35 })))
+        );
     }
 
     #[test]
     fn test_parse_block() {
         //                     ---- name
         let source = "(* block main *)abc(* end *)def";
-        let template = get_parser_n(source, 0).compile(None).unwrap();
+        let template = get_parser_n(source, &new_finder_default(), 0)
+            .compile(None)
+            .unwrap();
 
         match template.scope.data.first().unwrap() {
             Tree::Block(block) => {
@@ -1068,8 +1048,12 @@ mod tests {
     ///
     /// Panics if any of the first `n` tokens in the given source cause
     /// the parser to return an error,
-    fn get_parser_n(source: &str, n: i8) -> Parser {
-        let mut parser = Parser::new(source);
+    fn get_parser_n<'source>(
+        source: &'source str,
+        finder: &'source Finder,
+        n: i8,
+    ) -> Parser<'source> {
+        let mut parser = Parser::new(source, finder);
         for _ in 0..n {
             parser.next().unwrap();
         }

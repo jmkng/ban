@@ -58,7 +58,7 @@ impl From<Marker> for usize {
 /// let syntax = Builder::new()
 ///     .with_expression("{{", "}}")
 ///     .with_block("{*", "*}")
-///     .build();
+///     .to_syntax();
 /// ```
 pub struct Builder<'marker> {
     expression: (&'marker str, &'marker str),
@@ -67,9 +67,9 @@ pub struct Builder<'marker> {
 }
 
 impl<'marker> Builder<'marker> {
-    /// Create a new Builder.
+    /// Create a new [`Builder`].
     ///
-    /// The Builder has default markers:
+    /// The `Builder` has default markers:
     ///
     /// ```text
     /// Expressions: (( name ))
@@ -79,8 +79,8 @@ impl<'marker> Builder<'marker> {
     ///     Block:  (*- if ... -*)
     /// ```
     ///
-    /// To proceed with these defaults, you may immediately call `build`
-    /// to receive the Syntax instance.
+    /// To proceed with these defaults, you may immediately call `to_syntax` to receive the
+    /// [`Syntax`] instance.
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -107,7 +107,7 @@ impl<'marker> Builder<'marker> {
 
     /// Set the expression markers.
     ///
-    /// Returns the Builder, so additional methods may be chained.
+    /// Returns the [`Builder`], so additional methods may be chained.
     ///
     /// ```
     /// use ban::Builder;
@@ -118,6 +118,7 @@ impl<'marker> Builder<'marker> {
     #[inline]
     pub fn with_expression(mut self, begin: &'marker str, end: &'marker str) -> Self {
         self.set_expression(begin, end);
+
         self
     }
 
@@ -138,7 +139,7 @@ impl<'marker> Builder<'marker> {
 
     /// Set the block markers.
     ///
-    /// Returns the Builder, so additional methods may be chained.
+    /// Returns the [`Builder`], so additional methods may be chained.
     ///
     /// # Examples
     ///
@@ -151,6 +152,7 @@ impl<'marker> Builder<'marker> {
     #[inline]
     pub fn with_block(mut self, begin: &'marker str, end: &'marker str) -> Self {
         self.set_block(begin, end);
+
         self
     }
 
@@ -184,10 +186,11 @@ impl<'marker> Builder<'marker> {
     #[inline]
     pub fn with_whitespace(mut self, character: &'marker char) -> Self {
         self.set_whitespace(character);
+
         self
     }
 
-    /// Return a Syntax instance from the markers in this Builder.
+    /// Return a Syntax instance from the markers in this [`Builder`].
     ///
     /// # Examples
     ///
@@ -198,40 +201,35 @@ impl<'marker> Builder<'marker> {
     ///     .with_expression("{{", "}}")
     ///     .with_block("{*", "*}")
     ///     .with_whitespace(&'!')
-    ///     .build();
+    ///     .to_syntax();
     /// ```
-    pub fn build(&self) -> Syntax {
+    pub fn to_syntax(self) -> Syntax {
         let mut markers = Vec::new();
+        let (left_expression, right_expression) = self.expression;
+        let (left_block, right_block) = self.block;
+        let whitespace = self.whitespace;
 
-        let (ex0, ex1) = self.expression;
-        let (bl0, bl1) = self.block;
-        let ws = self.whitespace;
-
-        markers.push((Marker::BeginExpression.into(), ex0.into()));
-        markers.push((Marker::EndExpression.into(), ex1.into()));
-        markers.push((Marker::BeginExpressionTrim.into(), format!("{ex0}{ws}")));
-        markers.push((Marker::EndExpressionTrim.into(), format!("{ws}{ex1}")));
-        markers.push((Marker::BeginBlock.into(), bl0.into()));
-        markers.push((Marker::EndBlock.into(), bl1.into()));
-        markers.push((Marker::BeginBlockTrim.into(), format!("{bl0}{ws}")));
-        markers.push((Marker::EndBlockTrim.into(), format!("{ws}{bl1}")));
+        markers.push((Marker::BeginExpression.into(), left_expression.into()));
+        markers.push((Marker::EndExpression.into(), right_expression.into()));
+        markers.push((
+            Marker::BeginExpressionTrim.into(),
+            format!("{left_expression}{whitespace}"),
+        ));
+        markers.push((
+            Marker::EndExpressionTrim.into(),
+            format!("{whitespace}{right_expression}"),
+        ));
+        markers.push((Marker::BeginBlock.into(), left_block.into()));
+        markers.push((Marker::EndBlock.into(), right_block.into()));
+        markers.push((
+            Marker::BeginBlockTrim.into(),
+            format!("{left_block}{whitespace}"),
+        ));
+        markers.push((
+            Marker::EndBlockTrim.into(),
+            format!("{whitespace}{right_block}"),
+        ));
 
         Syntax::new(markers)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::Builder;
-    use morel::Finder;
-
-    #[test]
-    fn test_default() {
-        let syntax = Builder::new().build();
-        let result = Finder::new(syntax).next("hello (( there", 0);
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().1, 6);
-        assert_eq!(result.unwrap().2, 8);
     }
 }

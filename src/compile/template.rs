@@ -1,6 +1,7 @@
 use super::{tree::Extends, Scope};
 
-/// A compiled [`Template`] that can be rendered with a [`Store`][`crate::Store`].
+/// A compiled [`Template`] that can be rendered against a [`Store`][`crate::Store`]
+/// with a [`Renderer`][`crate::render::Renderer`].
 #[derive(Debug, Clone)]
 pub struct Template {
     /// The name of the [`Template`].

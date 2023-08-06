@@ -3,7 +3,7 @@ use std::{
     ops::{Index, Range},
 };
 
-/// Represents an area (beginning and ending indices) within source text.
+/// Represents an area within source text.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Region {
     /// The beginning of the range, inclusive.

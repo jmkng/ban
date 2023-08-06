@@ -1,5 +1,3 @@
-pub mod message;
-
 mod error;
 mod visual;
 

@@ -2,6 +2,7 @@ use crate::{
     compile::{Operator, Scope},
     region::Region,
 };
+
 use serde_json::Value;
 
 /// The Abstract Syntax Tree.
@@ -67,72 +68,70 @@ impl Expression {
     }
 }
 
-/// Storage for a stack of [`CheckPath`] instances.
+/// Storage for a stack of [`IfBranch`] instances.
 ///
-/// For example, this example represents one [`CheckTree`] made up of two
-/// [`CheckPath`] instances, which are separated at the "||" characters:
+/// For example, this example represents one [`IfTree`] made up of two
+/// [`IfBranch`] instances, which are separated at the "||" characters:
 ///
 /// this > that && those == these || they > them
 #[derive(Debug, Clone)]
-pub struct CheckTree {
-    pub branches: Vec<CheckBranch>,
+pub struct IfTree {
+    pub branches: Vec<IfBranch>,
 }
 
-impl CheckTree {
-    /// Create a new [`CheckTree`] with one initialized [`CheckBranch`].
+impl IfTree {
+    /// Create a new [`IfTree`] with one initialized [`IfBranch`].
     pub fn new() -> Self {
         Self {
-            branches: vec![CheckBranch::new()],
+            branches: vec![IfBranch::new()],
         }
     }
 
-    /// Split up the [`CheckTree`] by adding a new [`CheckBranch`].
+    /// Split up the [`IfTree`] by adding a new [`IfBranch`].
     ///
-    /// Any additional [`Check`] instances pushed to the `CheckTree` will
-    /// be added to this new `CheckBranch`.
+    /// Any additional [`IfLeaf`] instances will be added to this new `IfBranch`.
     pub fn split_branch(&mut self) {
-        self.branches.push(CheckBranch::new());
+        self.branches.push(IfBranch::new());
     }
 
-    /// Split up the last [`CheckBranch`] in the [`CheckTree`] by starting
-    /// a new [`Check`].
-    pub fn split_check(&mut self, check: Check) {
-        self.last_mut_must().push(check);
+    /// Split up the last [`IfBranch`] in the [`IfTree`] by starting
+    /// a new [`IfLeaf`].
+    pub fn split_leaf(&mut self, leaf: IfLeaf) {
+        self.last_mut_must().push(leaf);
     }
 
-    /// Return a mutable reference to the last [`CheckBranch`] in the
-    /// [`CheckTree`].
+    /// Return a mutable reference to the last [`IfBranch`] in the
+    /// [`IfTree`].
     ///
     /// # Panics
     ///
-    /// Will panic if no `CheckBranch` instances are in the `CheckTree`,
+    /// Will panic if no `IfBranch` instances are in the `IfTree`,
     /// which should never happen if created with .new().
-    pub fn last_mut_must(&mut self) -> &mut CheckBranch {
+    pub fn last_mut_must(&mut self) -> &mut IfBranch {
         self.branches
             .last_mut()
             .expect("tree should always have >1 branch")
     }
 
-    /// Return a mutable reference to the last [`Check`] in the last
-    /// [`CheckBranch`] in the [`CheckTree`].
+    /// Return a mutable reference to the last [`IfLeaf`] in the last
+    /// [`IfBranch`] in the [`IfTree`].
     ///
     /// # Panics
     ///
-    /// Will panic with the given reason if no `Check` is in the last
-    /// `CheckBranch`.
-    pub fn last_check_mut_must(&mut self, reason: &str) -> &mut Check {
+    /// Will panic with the given reason if the `IfBranch` is empty.
+    pub fn last_leaf_mut_must(&mut self, reason: &str) -> &mut IfLeaf {
         self.last_mut_must().last_mut().expect(reason)
     }
 }
 
-/// A single set of [`Check`] instances.
-pub type CheckBranch = Vec<Check>;
+/// A single set of [`IfLeaf`] instances.
+pub type IfBranch = Vec<IfLeaf>;
 
 /// Represents a comparison between two [`Base`] instances with some
 /// [`Operator`].
 #[derive(Debug, Clone)]
-pub struct Check {
-    /// True if the [`Check`] is negated.
+pub struct IfLeaf {
+    /// True if the [`IfLeaf`] is negated.
     pub negate: bool,
     /// The [`Base`] to the left of the [`Operator`].
     pub left: Base,
@@ -142,8 +141,8 @@ pub struct Check {
     pub right: Option<Base>,
 }
 
-impl Check {
-    /// Create a new [`Check`] from the given [`Base`].
+impl IfLeaf {
+    /// Create a new [`IfLeaf`] from the given [`Base`].
     pub fn new(base: Base, negate: bool) -> Self {
         Self {
             negate,
@@ -329,12 +328,12 @@ pub struct Include {
 #[derive(Debug, Clone)]
 pub struct If {
     /// Contains the data needed to determine which branch to render.
-    pub tree: CheckTree,
-    /// The [`Scope`] to render if the [`CheckTree`] contains a truthy
-    /// [`CheckBranch`].
+    pub tree: IfTree,
+    /// The [`Scope`] to render if the [`IfTree`] contains a truthy
+    /// [`IfBranch`].
     pub then_branch: Scope,
-    /// The [`Scope`] to render if the [`CheckTree`] does not contain
-    /// a truthy [`CheckBranch`].
+    /// The [`Scope`] to render if the [`IfTree`] does not contain
+    /// a truthy [`IfBranch`].
     pub else_branch: Option<Scope>,
     /// The location of the [`If`].
     pub region: Region,

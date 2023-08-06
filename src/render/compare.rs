@@ -1,7 +1,10 @@
-use crate::{compile::Operator, filter::Error, log::message::INCOMPATIBLE_TYPES};
+use crate::compile::Operator;
+
+use super::{filter::Error, INCOMPATIBLE_TYPES};
+
 use serde_json::{json, Value};
 
-/// Return true if the given [`Value`] is truthy.
+/// Return true if the [`Value`] is truthy.
 pub fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Bool(bo) => *bo,
@@ -46,7 +49,7 @@ pub fn compare_values(left: &Value, operator: Operator, right: &Value) -> Result
             Operator::GreaterOrEqual => left >= right,
             Operator::LesserOrEqual => left <= right,
             unsupported => {
-                return Err(Error::build(INCOMPATIBLE_TYPES).help(format!(
+                return Err(Error::build(INCOMPATIBLE_TYPES).with_help(format!(
                     "operator `{unsupported}` is invalid on string types"
                 )))
             }
@@ -59,7 +62,7 @@ pub fn compare_values(left: &Value, operator: Operator, right: &Value) -> Result
             Operator::GreaterOrEqual => left >= right,
             Operator::LesserOrEqual => left <= right,
             unsupported => {
-                return Err(Error::build(INCOMPATIBLE_TYPES).help(format!(
+                return Err(Error::build(INCOMPATIBLE_TYPES).with_help(format!(
                     "operator `{unsupported}` is invalid on boolean types"
                 )))
             }
@@ -89,7 +92,7 @@ pub fn compare_values(left: &Value, operator: Operator, right: &Value) -> Result
             Operator::LesserOrEqual => left.len() <= right.len(),
         },
         (left, right) => {
-            return Err(Error::build(INCOMPATIBLE_TYPES).help(format!(
+            return Err(Error::build(INCOMPATIBLE_TYPES).with_help(format!(
                 "types `{}` and `{}` cannot be compared",
                 left, right
             )))
@@ -101,12 +104,15 @@ pub fn compare_values(left: &Value, operator: Operator, right: &Value) -> Result
 
 #[cfg(test)]
 mod tests {
-    use crate::{compile, compile::Operator, render, Store};
+    use crate::{compile::Operator, Engine, Store};
     use serde_json::{json, Value};
 
     #[test]
     fn test_truthy_boolean() {
-        let template = compile("(* if value *)a(* else *)b(* end *)").unwrap();
+        let engine = Engine::default();
+        let template = engine
+            .compile("(* if value *)a(* else *)b(* end *)")
+            .unwrap();
         let true_values = vec![
             json!("lorem"),
             json!(12),
@@ -127,48 +133,34 @@ mod tests {
         let mut store = Store::new();
         for (left, right) in true_values.into_iter().zip(false_values) {
             store.insert_must("value", left);
-            // println!("{:?}", store.get("value"));
-            assert_eq!(render(&template, &store).unwrap(), "a");
+
+            assert_eq!(engine.render(&template, &store).unwrap(), "a");
             store.insert_must("value", right);
-            // println!("{:?}", store.get("value"));
-            assert_eq!(render(&template, &store).unwrap(), "b");
+
+            assert_eq!(engine.render(&template, &store).unwrap(), "b");
         }
     }
 
     #[test]
     fn incompatible_types() {
-        let template = compile("(* if \"hello\" > true *)a(* end *)");
+        let engine = Engine::default();
+        let template = engine.compile("(* if \"hello\" > true *)a(* end *)");
+
         assert!(template.is_ok());
-        let result = render(&template.unwrap(), &Store::new());
+        let result = engine.render(&template.unwrap(), &Store::new());
+
         assert!(result.is_err());
-
-        // println!("{:#}", result.unwrap_err());
-
-        // error: incompatible types
-        // --> ?:1:7
-        // |
-        // 1 | (* if "hello" > true *)a(* end *)
-        // |         ^^^^^^^^^^^^^^
-        // |
-        // = help: types `"hello"` and `true` cannot be compared
     }
 
     #[test]
     fn incompatible_operator() {
-        let template = compile("(* if true + false *)a(* end *)");
+        let engine = Engine::default();
+        let template = engine.compile("(* if true + false *)a(* end *)");
+
         assert!(template.is_ok());
-        let result = render(&template.unwrap(), &Store::new());
+        let result = engine.render(&template.unwrap(), &Store::new());
+
         assert!(result.is_err());
-
-        // println!("{:#}", result.unwrap_err());
-
-        // error: incompatible types
-        // --> ?:1:7
-        // |
-        // 1 | (* if true + false *)a(* end *)
-        // |         ^^^^^^^^^^^^
-        // |
-        // = help: operator `+` is invalid on boolean types
     }
 
     #[test]
@@ -324,15 +316,16 @@ mod tests {
     // Zip the two Vec<Value> instances together and compare them in a template with the
     // given `Operator`.
     fn test_truthy_compare(left: Vec<Value>, right: Vec<Value>, operator: Operator) {
+        let engine = Engine::default();
         let source = format!("(* if left {} right *)a(* end *)", operator);
-        let template = compile(&source).unwrap();
+        let template = engine.compile(&source).unwrap();
 
         let mut store = Store::new();
         for (left, right) in left.into_iter().zip(right) {
             store.insert_must("left", left);
             store.insert_must("right", right);
-            // println!("{:?} | {:?}", store.get("left"), store.get("right"));
-            let result = render(&template, &store).unwrap();
+            let result = engine.render(&template, &store).unwrap();
+
             assert_eq!(result, "a");
         }
     }

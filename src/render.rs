@@ -1,26 +1,11 @@
-mod compare;
+pub mod filter;
+pub mod pipe;
 
-use self::compare::{compare_values, is_truthy};
-use crate::{
-    compile::{
-        tree::{
-            Arguments, Base, Block, Call, CheckBranch, Expression, Extends, For, Identifier, If,
-            Include, Let, Output, Set, Tree,
-        },
-        Scope, Template,
-    },
-    engine::get_buffer,
-    log::{
-        message::{error_missing_template, error_write, INCOMPATIBLE_TYPES, INVALID_FILTER},
-        Error,
-    },
-    pipe::Pipe,
-    region::Region,
-    store::Shadow,
-    Engine, Store,
-};
-use serde::Serialize;
-use serde_json::Value;
+mod compare;
+mod store;
+
+pub use store::Store;
+
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -28,31 +13,24 @@ use std::{
     mem::take,
 };
 
-/// Render a [`Template`].
-///
-/// Provides a shortcut to quickly render a `Template` when no advanced features
-/// are needed.
-///
-/// You may also prefer to create an [`Engine`][`crate::Engine`] if you intend to
-/// use custom filters in your templates.
-///
-/// # Examples
-///
-/// ```
-/// use ban::{compile, render, Store};
-///
-/// let template = compile("hello, (( name ))!");
-/// assert!(template.is_ok());
-///
-/// let output = render(&template.unwrap(), &Store::new().with_must("name", "taylor"));
-/// assert_eq!(output.unwrap(), "hello, taylor!");
-/// ```
-pub fn render<'source>(template: &'source Template, store: &Store) -> Result<String, Error> {
-    let mut buffer = get_buffer(template);
-    Renderer::new(&Engine::default(), template, store).render(&mut Pipe::new(&mut buffer))?;
+use crate::{
+    compile::{tree::*, Scope, Template},
+    filter::INVALID_FILTER,
+    log::Error,
+    region::Region,
+    Engine,
+};
 
-    Ok(buffer)
-}
+use self::{
+    compare::{compare_values, is_truthy},
+    pipe::Pipe,
+    store::Shadow,
+};
+
+use serde::Serialize;
+use serde_json::Value;
+
+const INCOMPATIBLE_TYPES: &str = "incompatible types";
 
 /// Provides methods to render a set of [`Tree`] against some context data.
 pub struct Renderer<'source, 'store> {
@@ -81,31 +59,35 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if rendering any of the [`Tree`] instances within the
-    /// `Template` fail to render, or writing a rendered `Tree` to the buffer fails.
-    pub fn render(&mut self, pipe: &mut Pipe) -> Result<(), Error> {
+    /// Returns an [`Error`] if rendering any [`Tree`] instance fails,
+    /// or writing to the [`Pipe`] fails.
+    pub fn render(mut self, pipe: &mut Pipe) -> Result<(), Error> {
         match &self.template.extended {
             Some(extended) => self.evaluate_scope(extended, pipe),
             None => self.render_scope(&self.template.scope, pipe),
         }
-        .map_err(|e| {
-            if !e.is_named() && self.template.name.is_some() {
-                return e.template(self.template.name.as_ref().unwrap());
+        .map_err(|error| {
+            // The `Error` might come from another `Template`, so don't change
+            // the name if it already has one.
+            if !error.is_named() && self.template.name.is_some() {
+                return error.with_name(self.template.name.as_ref().unwrap());
             }
-            e
+
+            error
         })?;
+
         Ok(())
     }
 
     /// Evaluate the [`Scope`] and collect all [`Block`] instances within.
     ///
-    /// After all `Block` instances are collected, a new Renderer is spawned and used to
-    /// render the extended [`Template`].
+    /// After all `Block` instances are collected, a new [`Renderer`] is created and used
+    /// to render the extended [`Template`].
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the extended template does not exist, or any [`Tree`]
-    /// instances within fail to render.
+    /// Returns an [`Error`] if the extended `Template` does not exist, or rendering any
+    /// [`Tree`] instance fails.
     fn evaluate_scope(&mut self, extends: &Extends, pipe: &mut Pipe) -> Result<(), Error> {
         let name = extends.name.get_region().literal(&self.template.source);
         let template = self
@@ -123,15 +105,13 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if any of the [`Tree`] instances in the `Scope` cannot
-    /// be rendered.
+    /// Returns an [`Error`] if rendering any [`Tree`] instance fails.
     fn render_scope(&mut self, scope: &'source Scope, pipe: &mut Pipe) -> Result<(), Error> {
         let mut iterator = scope.data.iter();
-
         while let Some(next) = iterator.next() {
             match next {
                 Tree::Raw(ra) => {
-                    let value = self.evaluate_raw(ra)?;
+                    let value = self.evaluate_raw(ra);
                     pipe.write_str(value).map_err(|_| error_write())?
                 }
                 Tree::Output(ou) => {
@@ -153,22 +133,20 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 Tree::Block(bl) => {
                     self.render_block(bl, pipe)?;
                 }
-                _ => unreachable!("parser should catch invalid top level tree"),
+                _ => unreachable!("parser must catch invalid top level tree"),
             }
         }
+
         Ok(())
     }
 
-    /// Render a [`Block`].
+    /// Render a [`Block`] within the [`Renderer`] that matches the name of the given `Block`.
     ///
-    /// Searches for and renders a `Block` within the [`Renderer`] that matches the name
-    /// of the given `Block`, or when no matching block exists, renders any values within
-    /// the `Block` itself as a default.
+    /// When no matching `Block` exists, renders the scope within the `Block` itself.
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if any of the [`Tree`] instances within the `Block` fail to
-    /// render.
+    /// Returns an [`Error`] if rendering any [`Tree`] instance fails.
     fn render_block(&mut self, block: &'source Block, pipe: &mut Pipe) -> Result<(), Error> {
         let name = block.name.get_region().literal(&self.template.source);
 
@@ -184,7 +162,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// # Errors
     ///
     /// Returns an [`Error`] if the named [`Template`] is not found in the [`Engine`],
-    /// or rendering any [`Tree`] instances within the template fails.
+    /// or rendering any [`Tree`] instance fails.
     fn render_include(&mut self, include: &Include, pipe: &mut Pipe) -> Result<(), Error> {
         let name = include.name.get_region().literal(&self.template.source);
         let template = self
@@ -206,6 +184,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
             // Unscoped include, use the same store.
             Renderer::new(self.engine, template, self.shadow.store).render(pipe)?
         };
+
         Ok(())
     }
 
@@ -224,15 +203,16 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 return Ok(());
             }
         }
+
         self.render_scope(&i.then_branch, pipe)
     }
 
-    /// Render an [`Iterable`].
+    /// Render a [`For`].
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] when rendering a [`Tree`] within the [`Scope`] fails,
-    /// or the [`Base`] is not found in the [`Store`].
+    /// Returns an [`Error`] if the [`Base`] is not found in the [`Store`],
+    /// or rendering any [`Tree`] instance fails.
     fn render_for(&mut self, fo: &'source For, pipe: &mut Pipe) -> Result<(), Error> {
         self.shadow.push();
 
@@ -257,7 +237,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 }
             }
             incompatible => {
-                return Err(Error::build(INCOMPATIBLE_TYPES).help(format!(
+                return Err(Error::build(INCOMPATIBLE_TYPES).with_help(format!(
                     "iterating on value `{}` is not supported",
                     incompatible
                 )))
@@ -268,30 +248,29 @@ impl<'source, 'store> Renderer<'source, 'store> {
         Ok(())
     }
 
-    /// Evaluate the [`CheckBranch`] and return true if every [`Check`]
-    /// within is truthy.
+    /// Return true if the entire [`IfBranch`] is truthy.
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if evaluating a [`Base`] fails, which may happen
-    /// when accessing the literal value of a [`Region`] fails.
-    fn evaluate_branch(&self, branch: &CheckBranch) -> Result<bool, Error> {
-        for check in branch {
-            let left = self.evaluate_base(&check.left)?;
+    /// Returns an [`Error`] if a [`Value`] that the `IfBranch` depends on does
+    /// not exist in the [`Store`].
+    fn evaluate_branch(&self, branch: &IfBranch) -> Result<bool, Error> {
+        for leaf in branch {
+            let left = self.evaluate_base(&leaf.left)?;
 
-            match &check.right {
+            match &leaf.right {
                 Some(base) => {
                     let right = self.evaluate_base(&base)?;
-                    let operator = check
+                    let operator = leaf
                         .operator
-                        .expect("if check.right is some, operator must exist");
+                        .expect("operator must exist when leaf.right exists");
 
                     if !compare_values(&left, operator, &right)
-                        .map(|b| if check.negate { !b } else { b })
-                        .map_err(|e| {
-                            e.pointer(
+                        .map(|bool| if leaf.negate { !bool } else { bool })
+                        .map_err(|error| {
+                            error.with_pointer(
                                 &self.template.source,
-                                check.left.get_region().combine(base.get_region()),
+                                leaf.left.get_region().combine(base.get_region()),
                             )
                         })?
                     {
@@ -299,7 +278,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
                     }
                 }
                 None => {
-                    let result = match check.negate {
+                    let result = match leaf.negate {
                         true => !is_truthy(&left),
                         false => is_truthy(&left),
                     };
@@ -318,7 +297,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an error if rendering the `Output` fails.
+    /// Returns an [`Error`] if rendering the `Output` fails.
     fn evaluate_output(&self, output: &'source Output) -> Result<Cow<Value>, Error> {
         match &output.expression {
             Expression::Base(base) => self.evaluate_base(base),
@@ -330,8 +309,8 @@ impl<'source, 'store> Renderer<'source, 'store> {
     ///
     /// # Errors
     ///
-    /// Returns an error if evaluating the `Base` fails, which may happen when
-    /// accessing the literal value of a [`Region`] fails.
+    /// Returns an [`Error`] if a [`Value`] that the `Base` depends on does not exist
+    /// in the [`Store`].
     fn evaluate_base(&self, base: &'source Base) -> Result<Cow<Value>, Error> {
         match base {
             Base::Variable(variable) => self.evaluate_keys(&variable.path),
@@ -341,18 +320,16 @@ impl<'source, 'store> Renderer<'source, 'store> {
 
     /// Evaluate a [`Call`] to return a [`Value`].
     ///
-    /// Follows the receiver until a [`Base`] is reached, the beginning input
-    /// is derived from this base.
-    ///
-    /// From there, we work in the opposite direction, calling each filter
-    /// function one by one until we get back to the end of the `Call`.
+    /// Determines the initial input to the first [`Filter`][`crate::filter::Filter`]
+    /// by following the receiver until a [`Base`] is found, and deriving the input
+    /// from that `Base`.
     ///
     /// The output of the final `Call` in the chain is the return value.
     ///
     /// # Errors
     ///
     /// Returns an [`Error`] when rendering the `Base` of the `Call` chain fails,
-    /// or executing a [`Filter`][`crate::filter::Filter`] returns an [`Error`] itself.
+    /// or a `Filter` returns an [`Error`].
     fn evaluate_call(&self, call: &'store Call) -> Result<Cow<Value>, Error> {
         let mut call_stack = vec![call];
 
@@ -371,8 +348,8 @@ impl<'source, 'store> Renderer<'source, 'store> {
             let func = self.engine.get_filter(name_literal);
             if func.is_none() {
                 return Err(Error::build(INVALID_FILTER)
-                    .pointer(&self.template.source, call.name.region)
-                    .help(format!(
+                    .with_pointer(&self.template.source, call.name.region)
+                    .with_help(format!(
                         "template wants to use the `{name_literal}` filter, but a filter with that \
                         name was not found in this engine, did you add the filter to the engine with \
                         `.add_filter` or `.add_filter_must`?"
@@ -385,10 +362,9 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 HashMap::new()
             };
 
-            let returned = func
-                .unwrap()
-                .apply(&value, &arguments)
-                .or_else(|e| Err(e.pointer(&self.template.source, call.name.region)))?;
+            let returned = func.unwrap().apply(&value, &arguments).or_else(|error| {
+                Err(error.with_pointer(&self.template.source, call.name.region))
+            })?;
 
             value = Cow::Owned(returned);
         }
@@ -396,24 +372,20 @@ impl<'source, 'store> Renderer<'source, 'store> {
         Ok(value)
     }
 
-    /// Evaluate a [`Region`] to return a &str.
+    /// Evaluate a [`Region`] to return a `&str`.
     ///
     /// The literal value of the `Region` within the source text is retrieved
     /// and returned.
-    ///
-    /// # Errors
-    ///
-    /// Returns an [`Error`] if accessing the literal value of the `Region` fails.
-    fn evaluate_raw(&self, region: &Region) -> Result<&str, Error> {
-        Ok(region.literal(&self.template.source))
+    fn evaluate_raw(&self, region: &Region) -> &str {
+        region.literal(&self.template.source)
     }
 
-    /// Evaluate a set of [`Key`] instances to return a [`Value`] from the [`Store`].
+    /// Evaluate a set of [`Identifier`] instances to return a [`Value`] from the [`Store`].
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] when accessing the literal value of the [`Region`]
-    /// from any of the `Key` instances fails.
+    /// Returns an [`Error`] if a `Value` that an `Identifier` depends on does not exist in
+    /// the `Store`.
     fn evaluate_keys(&self, keys: &Vec<Identifier>) -> Result<Cow<Value>, Error> {
         let first_region = keys
             .first()
@@ -427,8 +399,8 @@ impl<'source, 'store> Renderer<'source, 'store> {
             Cow::Borrowed(store_value.unwrap())
         } else {
             return Err(Error::build("missing store value")
-                .pointer(&self.template.source, first_region)
-                .help(format!(
+                .with_pointer(&self.template.source, first_region)
+                .with_help(format!(
                     "unable to find `{first_value}` in store, \
                     ensure it exists or try wrapping with an `if` block",
                 )));
@@ -456,13 +428,12 @@ impl<'source, 'store> Renderer<'source, 'store> {
 
     /// Evaluate an [`Arguments`] to return a [`HashMap`] that contains the same values.
     ///
-    /// As described in the filter module, any argument without a name will
-    /// be automatically assigned a name.
+    /// As described in the [`filter`][`crate::filter`] module, any argument without a name
+    /// will be automatically assigned a name.
     ///
     /// # Errors
     ///
-    /// Propagates an [`Error`] if rendering a [`Base`] fails, which may happen when the literal
-    /// value of a [`Region`] cannot be accessed.
+    /// Returns an [`Error`] if rendering a [`Base`] fails.
     fn evaluate_arguments(&self, arguments: &Arguments) -> Result<HashMap<String, Value>, Error> {
         let mut buffer = HashMap::new();
         let mut unnamed = 1;
@@ -484,17 +455,27 @@ impl<'source, 'store> Renderer<'source, 'store> {
     }
 
     /// Evaluate a [`Let`] to make an assignment to the current [`Shadow`] scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if a [`Value`] that the [`Base`] depends on does not
+    /// exist in the [`Store`].
     fn evaluate_let(&mut self, le: &Let) -> Result<(), Error> {
         let value = self.evaluate_base(&le.right)?;
         self.shadow_set(
             &Set::Single(le.left.clone()),
             (None::<Value>, value.into_owned()),
         )?;
+
         Ok(())
     }
 
+    /// Set the blocks property on the [`Renderer`].
+    ///
+    /// Returns the `Renderer`, so additional methods may be chained.
     fn with_blocks(mut self, blocks: BlockMap<'source>) -> Self {
         self.blocks = blocks;
+
         self
     }
 
@@ -515,7 +496,6 @@ impl<'source, 'store> Renderer<'source, 'store> {
                         },
                     );
                 }
-                // In an extended template, all non-blocks are ignored.
                 _ => {}
             }
         }
@@ -549,8 +529,25 @@ impl<'source, 'store> Renderer<'source, 'store> {
                 self.shadow.insert_must(value, data.1);
             }
         }
+
         Ok(())
     }
+}
+
+/// Return an [`Error`] describing a missing template.
+fn error_missing_template(name: &str) -> Error {
+    Error::build("missing template").with_help(format!(
+        "template `{}` not found in engine, add it with `.add_template`",
+        name
+    ))
+}
+
+/// Return an [`Error`] explaining that the write operation failed.
+///
+/// This is likely caused by a failure during a `write!` macro operation.
+fn error_write() -> Error {
+    Error::build("write failure")
+        .with_help("failed to write result of render, are you low on memory?")
 }
 
 type BlockMap<'source> = HashMap<String, Named<'source>>;
@@ -560,15 +557,20 @@ type BlockMap<'source> = HashMap<String, Named<'source>>;
 struct Named<'source> {
     /// The [`Template`] that the [`Block`] was found in.
     template: &'source Template,
-    /// The [`Block`] found in [`Template`].
+    /// A [`Block`] found in a [`Template`].
     block: Block,
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use crate::{
+        compile::tree::{Argument, Arguments, Base, Literal},
+        Engine, Store, Template,
+    };
 
-    use crate::{Engine, Store, Template};
+    use super::Renderer;
+
+    use serde_json::json;
 
     #[test]
     fn test_render_raw() {
@@ -621,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_for() {
+    fn test_render_nested_for() {
         let (template, engine) = get_template_with_engine(
             "(* for value in first *)\
                 first loop: (( value )) \
@@ -643,45 +645,52 @@ mod tests {
 
     #[test]
     fn test_render_for_array() {
-        let (template, engine) = get_template_with_engine(
-            "(* for index, value in data *)\
-                (( index )) - (( value )) \
-            (* end *)",
-        );
+        let engine = Engine::default();
+        let single = engine
+            .compile(
+                "(* for value in data *)\
+                    (( value )) \
+                (* end *)",
+            )
+            .unwrap();
+        let pair = engine
+            .compile(
+                "(* for index, value in data *)\
+                    (( index )) - (( value )) \
+                (* end *)",
+            )
+            .unwrap();
         let store = Store::new().with_must("data", json!(["one", "two"]));
 
-        assert_eq!(
-            engine.render(&template, &store).unwrap(),
-            "0 - one 1 - two "
-        );
+        assert_eq!(engine.render(&single, &store).unwrap(), "one two ");
+        assert_eq!(engine.render(&pair, &store).unwrap(), "0 - one 1 - two ");
     }
 
     #[test]
-    fn test_render_for_object_pair() {
-        let (template, engine) = get_template_with_engine(
-            "(* for key, value in data *)\
-                (( key )) - (( value ))\
-            (* end *)",
-        );
-        let store = Store::new().with_must("data", json!({"one": "two"}));
-
-        assert_eq!(engine.render(&template, &store).unwrap(), "one - two");
-    }
-
-    #[test]
-    fn test_render_for_object_single() {
-        let (template, engine) = get_template_with_engine(
-            "(* for value in data *)\
+    fn test_render_for_object_set() {
+        let engine = Engine::default();
+        let single = engine
+            .compile(
+                "(* for value in data *)\
                 (( value ))\
             (* end *)",
-        );
+            )
+            .unwrap();
+        let pair = engine
+            .compile(
+                "(* for key, value in data *)\
+                (( key )) - (( value ))\
+            (* end *)",
+            )
+            .unwrap();
         let store = Store::new().with_must("data", json!({"one": "two"}));
 
-        assert_eq!(engine.render(&template, &store).unwrap(), "two");
+        assert_eq!(engine.render(&single, &store).unwrap(), "two");
+        assert_eq!(engine.render(&pair, &store).unwrap(), "one - two");
     }
 
     #[test]
-    fn test_let_global_scope() {
+    fn test_let_global_scope_if() {
         let (template, engine) = get_template_with_engine(
             "(* if is_admin *)\
                 (* let name = \"admin\" *)\
@@ -698,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn test_let_scoped_dropped() {
+    fn test_let_pop_scoped() {
         let (template, engine) = get_template_with_engine(
             "(* for item in inventory *)\
                 (* let name = item.description.name *)\
@@ -713,43 +722,52 @@ mod tests {
     }
 
     #[test]
-    fn test_include() {
-        let mut engine = Engine::default();
-        engine
-            .add_template_must("first", "two three (( name ))")
-            .unwrap();
-        engine
-            .add_template_must("second", "one (* include first name: info.name *)")
-            .unwrap();
-        let store = Store::new().with_must("info", json!({"name": "taylor", "age": 28}));
+    fn test_collect_blocks() {
+        let (template, engine) =
+            get_template_with_engine("(* block one *)one(* end *)(* block two *)two(* end *)");
+        let store = Store::new();
 
-        let template = engine.get_template("second").unwrap();
+        let mut renderer = Renderer::new(&engine, &template, &store);
 
-        assert_eq!(
-            engine.render(&template, &store).unwrap(),
-            "one two three taylor"
-        );
+        assert!(renderer.blocks.get("one").is_none());
+        assert!(renderer.blocks.get("two").is_none());
+        renderer.collect_blocks(&template.scope);
+
+        assert!(renderer.blocks.get("one").is_some());
+        assert!(renderer.blocks.get("two").is_some());
+        assert!(renderer.blocks.get("three").is_none());
     }
 
     #[test]
-    fn test_extend() {
-        let mut engine = Engine::default();
-        engine
-            .add_template_must("first", "hello, (* block name *)(* end *)!")
-            .unwrap();
-        engine
-            .add_template_must(
-                "second",
-                "(* extends first *)\
-                (* block name *)\
-                (( name ))\
-                (* end *)",
-            )
-            .unwrap();
-        let store = Store::new().with_must("name", "taylor");
-        let template = engine.get_template("second").unwrap();
+    fn test_evaluate_arguments_increment() {
+        let (template, engine) = get_template_with_engine("");
+        let store = Store::new();
+        let renderer = Renderer::new(&engine, &template, &store);
 
-        assert_eq!(engine.render(&template, &store).unwrap(), "hello, taylor!");
+        let arguments = renderer
+            .evaluate_arguments(&Arguments {
+                values: vec![
+                    Argument {
+                        name: None,
+                        value: Base::Literal(Literal {
+                            value: json!("hello"),
+                            region: (0..0).into(),
+                        }),
+                    },
+                    Argument {
+                        name: None,
+                        value: Base::Literal(Literal {
+                            value: json!("goodbye"),
+                            region: (0..0).into(),
+                        }),
+                    },
+                ],
+                region: (0..0).into(),
+            })
+            .unwrap();
+
+        assert_eq!(arguments.get("1"), Some(&json!("hello")));
+        assert_eq!(arguments.get("2"), Some(&json!("goodbye")));
     }
 
     /// A helper function that returns a [`Template`] from the given text,

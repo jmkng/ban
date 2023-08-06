@@ -18,7 +18,7 @@
 //! ```text
 //! 🦊 Note
 //!
-//! Ban is still in development and is not ready to be used.
+//! Ban is still in development, and is not ready to be used.
 //!
 //! I only document features here that are actually implemented, but even then,
 //! information may be incomplete until v1.
@@ -28,9 +28,9 @@
 //!
 //! Create a new [`Engine`][`crate::Engine`] with [`default`][`crate::default`],
 //! or if you want to use custom delimiters, use the [`Builder`][`crate::Builder`]
-//! type and the [`new`][`crate::Engine::new`] method.
+//! type and the [`new`][`crate::new`] method.
 //!
-//! ```rust
+//! ```
 //! let engine = ban::default();
 //! ```
 //!
@@ -42,7 +42,7 @@
 //!
 //! Use the [`Engine`] to compile a [`Template`].
 //!
-//! ```rust
+//! ```
 //! let engine = ban::default();
 //! let template = engine.compile("hello (( name ))!");
 //! ```
@@ -55,7 +55,7 @@
 //! To render this, we will need to supply a [`Store`] instance containing a value
 //! for that identifier.
 //!
-//! ```rust
+//! ```
 //! use ban::Store;
 //!
 //! let mut store = Store::new();
@@ -67,7 +67,7 @@
 //! Now that we have a [`Store`] containing the data our [`Template`] wants
 //! to use, we can tell the [`Engine`] to render it.
 //!
-//! ```rust
+//! ```
 //! use ban::Store;
 //!
 //! let engine = ban::default();
@@ -190,7 +190,7 @@
 //!
 //! ### Examples
 //!
-//! ```rust
+//! ```
 //! use ban::{Store};
 //! let mut engine = ban::default();
 //!
@@ -235,7 +235,7 @@
 //!
 //! ### Examples
 //!
-//! ```rust
+//! ```
 //! use ban::{filter::serde::json, Store};
 //! let mut engine = ban::default();
 //!
@@ -249,7 +249,7 @@
 //!
 //! ## Let
 //!
-//! Let blocks allow assignment of a value to an identifier.
+//! Let expressions allow assignment of a value to an identifier.
 //!
 //! ```text
 //! (* let name = "taylor" *)
@@ -283,8 +283,9 @@
 //!
 //! ### Examples
 //!
-//! ```rust
+//! ```
 //! use ban::Store;
+//!
 //! let mut engine = ban::default();
 //!
 //! let template = engine.compile("hello, (* let name = \"taylor\" -*) (( name ))!");
@@ -294,7 +295,7 @@
 //!
 //! ## Include
 //!
-//! Include blocks allow other templates to be called.
+//! Include expressions allow other templates to be rendered.
 //!
 //! ```text
 //! (* include header *)
@@ -309,7 +310,7 @@
 //! (* include header name: data.name *)
 //! ```
 //!
-//! When you pass arguments to an included template, it has access to those values
+//! When you pass arguments to an included template, it will have access to those values
 //! and nothing else.
 //!
 //! ### Examples
@@ -332,57 +333,126 @@
 //!```
 //!
 //! ## Extends
-// TODO
-//! ## Working Without an Engine
 //!
-//! You don't have to create an [`Engine`] if you don't need to use
-//! [`filters`][`crate::filter::Filter`] or inheritance, Ban exposes
-//! [`compile`][`crate::compile()`] and [`render`][`crate::render()`] as a shortcut.
+//! Extends expressions allow templates to extend one another.
+//!
+//! ```text
+//! (* extends parent *)
+//! ```
+//!
+//! A template extends another template when the "extends" expression is found first in the
+//! template source.
+//!
+//! When Ban renders an extended template, all of the block declarations in the source are
+//! collected and carried to the parent. Assuming the parent template is not also extended,
+//! the blocks are rendered there.
+//!
+//! When a parent (non-extended) template is rendered and a block expression is encountered,
+//! ban will check to see if it has a block from a child template with the same name. If it
+//! does, the block is rendered.
+//!
+//! When no matching block is found, any data inside of the block is rendered instead as a
+//! default value.
 //!
 //! ```rust
-//! use ban::{compile, render, Store};
+//! use ban::{Engine, Store};
 //!
-//! let template = compile("hello, (( name ))!");
-//! let result = render(
-//!     &template.unwrap(),
-//!     &Store::new().with_must("name", "taylor")
+//! let mut engine = Engine::default();
+//! engine
+//!     .add_template_must(
+//!         "first", //                                           ----------- default
+//!         "hello (* block name *)(* end *), (* block greeting *)doing well?(* end *)",
+//!     )
+//!     .unwrap();
+//! engine
+//!     .add_template_must(
+//!         "second",
+//!         "(* extends first *)\
+//!         (* block name *)\
+//!         (( name ))\
+//!         (* end *)",
+//!     )
+//!     .unwrap();
+//! let store = Store::new().with_must("name", "taylor");
+//! let template = engine.get_template("second").unwrap();
+//!
+//! assert_eq!(
+//!     engine.render(&template, &store).unwrap(),
+//!     "hello taylor, doing well?"
 //! );
+//!```
 //!
-//! assert_eq!(result.unwrap(), "hello, taylor!");
+//! View the `examples/inheritance` directory for a full illustration.
+//!
+//! ## Delimiters
+//!
+//! Use the `Builder` type to enable custom delimiters.
+//!
+//! ```
+//! use ban::{Engine, Builder, Store};
+//!
+//! let engine = Engine::new(
+//!     Builder::new()
+//!         .with_expression(">>", "<<")
+//!         .with_block("{@", "@}")
+//!         .with_whitespace(&'~')
+//!         .to_syntax(),
+//! );
+//! let template = engine
+//!     .compile("{@ if true ~@}     Hello, >> name <<!{@ end @}")
+//!     .unwrap();
+//! let result = engine.render(&template, &Store::new().with_must("name", "taylor"));
+//!
+//! assert_eq!(result, Ok("Hello, taylor!".into()))
 //! ```
 #![doc(html_logo_url = "https://raw.githubusercontent.com/jmkng/ban/main/public/ban.svg")]
 #![deny(unsafe_code)]
 #![warn(clippy::missing_docs)]
 #![warn(clippy::missing_docs_in_private_items)]
 
-pub mod filter;
-
 mod compile;
 mod engine;
 mod log;
-mod pipe;
 mod region;
 mod render;
-mod store;
-mod syntax;
 
-pub use compile::{compile, Template};
+pub use compile::{Builder, Template};
 pub use engine::Engine;
-pub use render::render;
-pub use store::Store;
-pub use syntax::Builder;
+pub use render::{filter, Store};
 
-use syntax::Marker;
+use morel::Syntax;
 
-/// Create a new instance of [`Engine`] using the default `Syntax`.
+/// Create a new [`Engine`] with the given `Syntax`.
 ///
-/// Equivalent to [`default`][`crate::Engine::default()`]
+/// Equivalent to `Engine::new`.
+///
+/// # Examples
+///
+/// ```
+/// use ban::Builder;
+///
+/// let syntax = Builder::new()
+///     .with_expression("{{", "}}")
+///     .with_block("{*", "*}")
+///     .to_syntax();
+///
+/// let engine = ban::new(syntax);
+/// ```
+#[inline]
+pub fn new(syntax: Syntax) -> Engine {
+    Engine::new(syntax)
+}
+
+/// Create a new [`Engine`] with the default `Syntax`.
+///
+/// Equivalent to `Engine::default`.
 ///
 /// # Examples
 ///
 /// ```
 /// let engine = ban::default();
 /// ```
+#[inline]
 pub fn default() -> Engine {
     Engine::default()
 }

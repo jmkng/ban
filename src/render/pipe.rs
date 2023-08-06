@@ -1,5 +1,6 @@
-use serde_json::{Map, Value};
 use std::fmt::{Arguments, Display, Result, Write};
+
+use serde_json::{Map, Value};
 
 /// Wraps some underlying buffer by providing methods that write to it
 /// in different formats.
