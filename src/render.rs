@@ -69,7 +69,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
         .map_err(|error| {
             // The `Error` might come from another `Template`, so don't change
             // the name if it already has one.
-            if !error.is_named() && self.template.get_name().is_some() {
+            if !error.get_name().is_some() && self.template.get_name().is_some() {
                 return error.with_name(self.template.get_name().unwrap());
             }
 

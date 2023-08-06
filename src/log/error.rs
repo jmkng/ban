@@ -32,13 +32,13 @@ use std::fmt::{Debug, Display, Formatter, Result};
 /// ```
 pub struct Error {
     /// Describes the cause of the [`Error`].
-    pub reason: String,
+    reason: String,
     /// A visualization to help illustrate the [`Error`].
-    pub visual: Option<Box<dyn Visual>>,
+    visual: Option<Box<dyn Visual>>,
     /// Additional information to display with the [`Error`].
-    pub help: Option<String>,
+    help: Option<String>,
     /// The name of the Template that the [`Error`] comes from.
-    pub name: Option<String>,
+    name: Option<String>,
 }
 
 impl Error {
@@ -176,9 +176,9 @@ impl Error {
         self
     }
 
-    /// Return true if the [`Error`] has a name.
-    pub fn is_named(&self) -> bool {
-        self.name.is_some()
+    /// Return the name of the `Template` that the error is related to.
+    pub fn get_name(&self) -> Option<&str> {
+        self.name.as_ref().map(|x| x.as_str())
     }
 }
 
