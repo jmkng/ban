@@ -3,6 +3,8 @@ mod parse;
 mod syntax;
 mod template;
 
+use morel::Finder;
+
 pub use crate::compile::{
     lex::token,
     parse::{scope::Scope, tree, Parser},

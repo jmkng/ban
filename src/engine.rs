@@ -398,11 +398,6 @@ pub fn get_buffer(template: &Template) -> String {
     }
 }
 
-/// Return a new [`Finder`] with default [`Syntax`][`morel::Syntax`].
-pub fn new_finder_default() -> Finder {
-    Finder::new(Builder::new().to_syntax())
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

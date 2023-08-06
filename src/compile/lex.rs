@@ -413,7 +413,6 @@ mod tests {
             lex::{state::CursorState, Token},
             Keyword, Operator,
         },
-        engine::new_finder_default,
         log::Error,
         region::Region,
         Builder,
@@ -454,7 +453,7 @@ mod tests {
 
     #[test]
     fn test_lex_state_change() -> Result<(), Error> {
-        let finder = new_finder_default();
+        let finder = Finder::new(Builder::new().to_syntax());
         let mut block_lexer = Lexer::new("lorem (*", &finder);
         let mut expression_lexer = Lexer::new("lorem ((", &finder);
         block_lexer.next()?;
@@ -640,7 +639,7 @@ mod tests {
             (Token::Identifier, 9..13),
         ];
 
-        let finder = new_finder_default();
+        let finder = Finder::new(Builder::new().to_syntax());
         let mut lexer = Lexer::new("hello (( name (( ))", &finder);
         for (token, range) in expect {
             assert_eq!(lexer.next(), Ok(Some((token, range.into()))))
@@ -656,7 +655,7 @@ mod tests {
     where
         T: Into<Region>,
     {
-        let finder = new_finder_default();
+        let finder = Finder::new(Builder::new().to_syntax());
         let mut lexer = Lexer::new(source, &finder);
         for (token, region) in expect {
             assert_eq!(lexer.next(), Ok(Some((token, region.into()))))
