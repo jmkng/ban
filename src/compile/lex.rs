@@ -142,7 +142,7 @@ impl<'source> Lexer<'source> {
                     // after it, extra handling via `.lex_operator` required.
                     '=' | '!' | '>' | '<' | '|' | '&' => self.lex_operator(iterator, index, char),
                     _ => Err(Error::build(UNEXPECTED_TOKEN)
-                        .with_pointer(self.source, index..index + 1)
+                        .with_pointer(self.source, index..index + char.len_utf8())
                         .with_help(
                             "expected one of `*`, `+`, `/`, `-`, `.`, `:`, an identifier, \
                             an ascii digit, or beginning of a string literal marked with \"",

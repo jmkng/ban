@@ -145,7 +145,15 @@ impl<'source> Parser<'source> {
                         Fragment::Let(left, right) => Tree::Let(Let { left, right }),
                         Fragment::Include(name, mount) => Tree::Include(Include { name, mount }),
                         Fragment::Extends(name) => {
-                            if scopes.len() != 1 || !scopes.first().unwrap().data.is_empty() {
+                            if scopes.len() != 1
+                                || !scopes.first().unwrap().data.is_empty()
+                                    && !scopes
+                                        .first()
+                                        .unwrap()
+                                        .data
+                                        .iter()
+                                        .any(|t| matches!(t, Tree::Raw(_)))
+                            {
                                 return Err(Error::build(UNEXPECTED_BLOCK)
                                     .with_pointer(&self.lexer.source, end)
                                     .with_help("block `extend` must appear at top of template"));
@@ -868,7 +876,7 @@ mod tests {
     use crate::{
         compile::{lex::token::Token, tree::Set},
         region::Region,
-        Builder,
+        Builder, Engine, Store,
     };
 
     use super::{
