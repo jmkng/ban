@@ -351,13 +351,13 @@
 //! engine
 //!     .add_template_must(
 //!         "first",
-//!         "hello (* block name *)(* end *), (* block greeting *)doing well?(* end *)",
+//!         r#"hello (* block "🦊" *)(* end *), (* block greeting *)doing well?(* end *)"#,
 //!     )
 //!     .unwrap();
 //! engine
 //!     .add_template_must(
 //!         "second",
-//!         "(* extends first *)(* block name *)(( name ))(* end *)",
+//!         r#"(* extends first *)(* block "🦊" *)(( name ))(* end *)"#,
 //!     )
 //!     .unwrap();
 //!

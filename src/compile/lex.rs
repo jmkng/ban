@@ -87,12 +87,6 @@ impl<'source> Lexer<'source> {
     ///
     /// Returns an [`Error`] when an unexpected [`Token`] is found.
     fn lex_tag(&mut self, from: usize) -> TokenResult {
-        let mut advance = |length: usize, data: Token| {
-            self.cursor += length;
-
-            Ok(Some((data, (from..from + length).into())))
-        };
-
         match self.finder.starts(self.source, from) {
             Some((id, length)) => {
                 let (token, is_trimmed) = Token::from_usize_trim(id);
@@ -121,6 +115,12 @@ impl<'source> Lexer<'source> {
                 }
             }
             None => {
+                let mut advance = |length: usize, data: Token| {
+                    self.cursor += length;
+
+                    Ok(Some((data, (from..from + length).into())))
+                };
+
                 let mut iterator = self.source[from..]
                     .char_indices()
                     .map(|(d, c)| (from + d, c));
@@ -134,18 +134,16 @@ impl<'source> Lexer<'source> {
                     '.' => advance(1, Token::Period),
                     ',' => advance(1, Token::Comma),
                     ':' => advance(1, Token::Colon),
+                    '"' => self.lex_string(iterator, index),
+                    '=' | '!' | '>' | '<' | '|' | '&' => self.lex_operator(iterator, index, char),
                     c if c.is_whitespace() => Ok(Some(self.lex_whitespace(iterator, index))),
                     c if c.is_ascii_digit() => Ok(Some(self.lex_digit(iterator, index))),
                     c if is_ident_start(c) => Ok(Some(self.lex_ident_or_keyword(iterator, index))),
-                    '"' => self.lex_string(iterator, index),
-                    // Below characters can mean one thing or another depending on the character
-                    // after it, extra handling via `.lex_operator` required.
-                    '=' | '!' | '>' | '<' | '|' | '&' => self.lex_operator(iterator, index, char),
                     _ => Err(Error::build(UNEXPECTED_TOKEN)
                         .with_pointer(self.source, index..index + char.len_utf8())
                         .with_help(
                             "expected one of `*`, `+`, `/`, `-`, `.`, `:`, an identifier, \
-                            an ascii digit, or beginning of a string literal marked with \"",
+                            an ascii digit, or beginning of a string literal marked with `\"`",
                         )),
                 }
             }
