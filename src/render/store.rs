@@ -155,6 +155,23 @@ impl Store {
     pub fn get(&self, index: &str) -> Option<&Value> {
         self.data.get(index)
     }
+
+    /// Returns a mutable reference to the [`Value`] corresponding to the key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Store;
+    ///
+    /// let mut store = Store::new().with_must("name", "taylor");
+    /// let mut result = store.get_mut("name");
+    ///
+    /// assert_eq!(result.unwrap(), "taylor")
+    /// ```
+    #[inline]
+    pub fn get_mut(&mut self, index: &str) -> Option<&mut Value> {
+        self.data.get_mut(index)
+    }
 }
 
 // Wrapper for [`Store`] that provides mutable storage for shadowed values.
@@ -186,6 +203,7 @@ impl<'store> Shadow<'store> {
         if self.data.len() == 1 {
             panic!("last scope must never be removed");
         }
+
         self.data.pop();
     }
 
@@ -217,6 +235,7 @@ impl<'store> Shadow<'store> {
                 return Some(value);
             }
         }
+
         self.store.get(index)
     }
 }

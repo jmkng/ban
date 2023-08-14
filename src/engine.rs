@@ -147,6 +147,7 @@ impl Engine {
             .map_err(|error| error.with_name(name))?;
 
         self.templates.insert(name.to_owned(), template);
+
         Ok(())
     }
 
@@ -174,6 +175,7 @@ impl Engine {
             .map_err(|error| error.with_name(name))?;
 
         self.templates.insert(name.to_owned(), template);
+
         Ok(())
     }
 
@@ -238,6 +240,7 @@ impl Engine {
             )));
         }
         self.filters.insert(as_string, Box::new(filter));
+
         Ok(())
     }
 
@@ -318,6 +321,7 @@ impl Engine {
         T: Filter + 'static,
     {
         self.add_filter(name, filter)?;
+
         Ok(self)
     }
 
