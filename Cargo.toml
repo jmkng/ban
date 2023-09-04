@@ -4,6 +4,7 @@ version = "0.52.0"
 edition = "2021"
 description = "A minimal and fast template engine."
 license = "MIT"
+repository = "https://github.com/jmkng/ban"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
