@@ -71,7 +71,7 @@
 //!
 //! The [`with_visual`][`crate::filter::Error::visual`] method can be used to create a
 //! visualization when your `Filter` needs to return an [`Error`]. If you don't set one
-//! yourself, Ban will automatcially assign a [`Pointer`][`crate::filter::visual::Pointer`]
+//! yourself, Ban will automatically assign a [`Pointer`][`crate::filter::visual::Pointer`]
 //! that points to the `Filter` name.
 //!
 //! If you were to pass a number to the filter and print the error with `{:#}`,

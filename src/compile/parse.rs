@@ -290,7 +290,7 @@ impl<'source> Parser<'source> {
             Keyword::Let => {
                 let left = self.parse_identifier()?;
                 self.next_must(Token::Assign)?;
-                let right = self.parse_base()?;
+                let right = self.parse_expression()?;
                 Ok(Fragment::Let(left, right))
             }
             Keyword::Include => {
@@ -549,7 +549,11 @@ impl<'source> Parser<'source> {
         //                         from         to       from     to
         let mut values: Vec<Argument> = vec![];
 
-        while !self.peek_is(Token::Pipe)? && !self.peek_is(Token::EndExpression)? {
+        // Expect arguments until `Token::Pipe` or `Token::End*`.
+        while !self.peek_is(Token::Pipe)?
+            && !self.peek_is(Token::EndExpression)?
+            && !self.peek_is(Token::EndBlock)?
+        {
             values.push(self.parse_argument()?);
             if !self.peek_is(Token::Comma)? {
                 break;
@@ -876,7 +880,7 @@ mod tests {
     use crate::{
         compile::{lex::token::Token, tree::Set},
         region::Region,
-        Builder, Engine, Store,
+        Builder,
     };
 
     use super::{

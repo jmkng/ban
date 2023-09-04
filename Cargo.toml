@@ -1,6 +1,6 @@
 [package]
 name = "ban"
-version = "0.51.0"
+version = "0.52.0"
 edition = "2021"
 description = "A minimal and fast template engine."
 license = "MIT"

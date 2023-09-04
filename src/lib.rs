@@ -244,11 +244,13 @@
 //! The left side of the expression must be an identifier, meaning an unquoted
 //! string, but the right side can be an identifier or literal value.
 //!
+//! You can also use filters in let expressions!
+//!
 //! ```text
 //! (* if is_admin *)
 //!     (* let name = "admin" *)
 //! (* else *)
-//!     (* let name = user.name *)
+//!     (* let name = user.name | to_lowercase *)
 //! (* end *)
 //!
 //! Hello, (( name )).

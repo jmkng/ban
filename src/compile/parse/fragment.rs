@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::compile::tree::{IfTree, Set};
 
-use super::tree::{Base, Identifier, Mount};
+use super::tree::{Base, Expression, Identifier, Mount};
 
 /// Represents a fragment of a larger expression.
 pub enum Fragment {
@@ -16,7 +16,7 @@ pub enum Fragment {
     /// scope variables and something to iterate over.
     For(Set, Base),
     /// A "let" expression, used in assignment operations.
-    Let(Identifier, Base),
+    Let(Identifier, Expression),
     /// An "include" expression, used to render other templates in place.
     Include(Base, Option<Mount>),
     /// An "extends" expression, tells the `Renderer` handling the

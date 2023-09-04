@@ -379,5 +379,5 @@ pub struct Let {
     /// The variable name.
     pub left: Identifier,
     /// The value to be assigned to the variable name.
-    pub right: Base,
+    pub right: Expression,
 }

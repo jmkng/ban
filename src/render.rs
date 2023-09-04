@@ -118,7 +118,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
                     pipe.write_str(value).map_err(|_| error_write())?
                 }
                 Tree::Output(ou) => {
-                    let value = self.evaluate_output(ou)?;
+                    let value = self.evaluate_expression(&ou.expression)?;
                     pipe.write_value(&value).map_err(|_| error_write())?
                 }
                 Tree::If(i) => {
@@ -304,8 +304,8 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// # Errors
     ///
     /// Returns an [`Error`] if rendering the `Output` fails.
-    fn evaluate_output(&self, output: &'source Output) -> Result<Cow<Value>, Error> {
-        match &output.expression {
+    fn evaluate_expression(&self, expression: &'source Expression) -> Result<Cow<Value>, Error> {
+        match &expression {
             Expression::Base(base) => self.evaluate_base(base),
             Expression::Call(call) => self.evaluate_call(call),
         }
@@ -470,7 +470,7 @@ impl<'source, 'store> Renderer<'source, 'store> {
     /// Returns an [`Error`] if a [`Value`] that the [`Base`] depends on does not
     /// exist in the [`Store`].
     fn evaluate_let(&mut self, le: &Let) -> Result<(), Error> {
-        let value = self.evaluate_base(&le.right)?;
+        let value = self.evaluate_expression(&le.right)?;
         self.shadow_set(
             &Set::Single(le.left.clone()),
             (None::<Value>, value.into_owned()),
@@ -572,14 +572,17 @@ struct Named<'source> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::{
         compile::tree::{Argument, Arguments, Base, Literal},
+        filter::Error,
         Engine, Store, Template,
     };
 
     use super::Renderer;
 
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[test]
     fn test_render_raw() {
@@ -700,17 +703,18 @@ mod tests {
 
     #[test]
     fn test_let_global_scope_if() {
-        let (template, engine) = get_template_with_engine(
+        let (template, mut engine) = get_template_with_engine(
             "(* if is_admin *)\
                 (* let name = \"admin\" *)\
             (* else *)\
-                (* let name = user.name *)\
+                (* let name = user.name | to_lowercase *)\
             (* end *)\
             Hello, (( name )).",
         );
+        engine.add_filter_must("to_lowercase", to_lowercase);
         let store = Store::new()
             .with_must("is_admin", false)
-            .with_must("user", json!({"name": "taylor"}));
+            .with_must("user", json!({"name": "Taylor"}));
 
         assert_eq!(engine.render(&template, &store).unwrap(), "Hello, taylor.");
     }
@@ -777,6 +781,15 @@ mod tests {
 
         assert_eq!(arguments.get("1"), Some(&json!("hello")));
         assert_eq!(arguments.get("2"), Some(&json!("goodbye")));
+    }
+
+    /// An example filter used for testing.
+    fn to_lowercase(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
+        match value {
+            Value::String(string) => Ok(json!(string.to_owned().to_lowercase())),
+            _ => Err(Error::build("filter `to_lowercase` requires string input")
+                .with_help("use quotes to coerce data to string")),
+        }
     }
 
     /// A helper function that returns a [`Template`] from the given text,
