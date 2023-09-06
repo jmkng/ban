@@ -7,7 +7,7 @@ pub struct Template {
     name: Option<String>,
     /// The Abstract Syntax Tree generated during compilation.
     scope: Scope,
-    /// Reference to the source data from which this [`Template`] was generated.
+    /// The source data from which this [`Template`] was generated.
     source: String,
     /// If the [`Template`] is extended, contains information about the other
     /// `Template`.

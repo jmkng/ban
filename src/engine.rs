@@ -114,6 +114,66 @@ impl Engine {
         Ok(buffer)
     }
 
+    /// Store an existing [`Template`] in the [`Engine`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Engine;
+    ///
+    /// let mut first_engine = Engine::default();
+    /// let template = first_engine.compile("hello, (( name ))!").unwrap();
+    ///
+    /// let mut second_engine = Engine::default();
+    /// let mut third_engine = Engine::default();
+    ///
+    /// // If the template was pulled from another engine, it might have a name already.
+    /// // Use the same name, or overwrite it.
+    /// if template.get_name().is_some() {
+    ///     second_engine.add_template(template.get_name().unwrap(), template.clone());
+    /// } else {
+    ///     second_engine.add_template("new_name", template);
+    /// }
+    /// ```
+    pub fn add_template<T>(&mut self, name: T, template: Template)
+    where
+        T: Into<String>,
+    {
+        self.templates.insert(name.into(), template);
+    }
+
+    /// Store an existing [`Template`] in the [`Engine`].
+    ///
+    /// Returns the [`Engine`], so additional methods may be chained.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ban::Engine;
+    ///
+    /// let mut first_engine = Engine::default();
+    /// let template = first_engine.compile("hello, (( name ))!").unwrap();
+    ///
+    /// let mut second_engine = Engine::default();
+    /// let mut third_engine = Engine::default();
+    ///
+    /// // If the template was pulled from another engine, it might have a name already.
+    /// // Use the same name, or overwrite it.
+    /// if template.get_name().is_some() {
+    ///     second_engine.add_template(template.get_name().unwrap(), template.clone());
+    /// } else {
+    ///     second_engine.add_template("new_name", template);
+    /// }
+    /// ```
+    pub fn with_template<T>(mut self, name: T, template: Template) -> Self
+    where
+        T: Into<String>,
+    {
+        self.add_template(name, template);
+
+        self
+    }
+
     /// Compile and store a new [`Template`] with the given name.
     ///
     /// # Errors
@@ -128,13 +188,13 @@ impl Engine {
     /// use ban::Engine;
     ///
     /// let mut engine = Engine::default();
-    /// let result = engine.add_template("template_name", "hello, (( name ))!");
+    /// let result = engine.insert_template("template_name", "hello, (( name ))!");
     /// assert!(result.is_ok());
     ///
-    /// let second = engine.add_template("template_name", "hello again");
+    /// let second = engine.insert_template("template_name", "hello again");
     /// assert!(second.is_err());
     /// ```
-    pub fn add_template(&mut self, name: &str, text: &str) -> Result<(), Error> {
+    pub fn insert_template(&mut self, name: &str, text: &str) -> Result<(), Error> {
         if let Some(_) = self.templates.get(name) {
             return Err(Error::build(format!(
                 "template with name `{name}` already exists in engine, \
@@ -167,9 +227,9 @@ impl Engine {
     /// use ban::Engine;
     ///
     /// let mut engine = Engine::default();
-    /// engine.add_template_must("template_name", "hello, (( name ))!");
+    /// engine.insert_template_must("template_name", "hello, (( name ))!");
     /// ```
-    pub fn add_template_must(&mut self, name: &str, text: &str) -> Result<(), Error> {
+    pub fn insert_template_must(&mut self, name: &str, text: &str) -> Result<(), Error> {
         let template = Parser::new(text, &self.finder)
             .compile(Some(name.to_owned()))
             .map_err(|error| error.with_name(name))?;
@@ -187,10 +247,11 @@ impl Engine {
     /// use ban::Engine;
     ///
     /// let mut engine = Engine::default();
-    /// engine.add_template_must("template_name", "hello, (( name ))!");
+    /// engine.insert_template_must("template_name", "hello, (( name ))!");
     ///
     /// let template = engine.get_template("template_name");
     /// assert!(template.is_some());
+    /// ```
     pub fn get_template(&self, name: &str) -> Option<&Template> {
         self.templates.get(name)
     }
@@ -404,7 +465,7 @@ pub fn get_buffer(template: &Template) -> String {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::{engine::Engine, log::Error};
+    use crate::{engine::Engine, log::Error, Store};
 
     use serde_json::Value;
 
@@ -433,6 +494,28 @@ mod tests {
             .with_filter_must("faux", faux_filter_a)
             .with_filter("faux", faux_filter_a)
             .is_err())
+    }
+
+    #[test]
+    fn test_add_existing() {
+        let mut engine = Engine::default();
+        engine
+            .insert_template_must("template_name", "faux")
+            .unwrap();
+        let template = engine.get_template("template_name").unwrap();
+        let mut second_engine = Engine::default();
+        second_engine.add_template(template.get_name().unwrap(), template.clone());
+
+        assert_eq!(
+            second_engine
+                .render(
+                    second_engine.get_template("template_name").unwrap(),
+                    &Store::new()
+                )
+                .unwrap(),
+            "faux"
+        );
+        assert!(engine.get_template("template_name").is_some())
     }
 
     #[test]

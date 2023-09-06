@@ -310,7 +310,7 @@
 //!
 //! let mut engine = ban::default();
 //! engine
-//!     .add_template_must("header", "hello, (( name ))! - (( age ))")
+//!     .insert_template_must("header", "hello, (( name ))! - (( age ))")
 //!     .unwrap();
 //!
 //! let template = engine
@@ -351,13 +351,13 @@
 //! let mut engine = Engine::default();
 //!
 //! engine
-//!     .add_template_must(
+//!     .insert_template_must(
 //!         "first",
 //!         r#"hello (* block "🦊" *)(* end *), (* block greeting *)doing well?(* end *)"#,
 //!     )
 //!     .unwrap();
 //! engine
-//!     .add_template_must(
+//!     .insert_template_must(
 //!         "second",
 //!         r#"(* extends first *)(* block "🦊" *)(( name ))(* end *)"#,
 //!     )
