@@ -7,7 +7,7 @@ use crate::{
     Builder, Store,
 };
 
-use morel::{Finder, Syntax};
+use morel::{Finder, Kind, Syntax};
 
 pub const INVALID_FILTER: &str = "invalid filter";
 
@@ -42,7 +42,7 @@ impl Engine {
         Self {
             filters: HashMap::new(),
             templates: HashMap::new(),
-            finder: Finder::new(syntax),
+            finder: Finder::new(syntax, Kind::AhoCorasick),
         }
     }
 
@@ -444,7 +444,7 @@ impl Default for Engine {
         Self {
             filters: HashMap::new(),
             templates: HashMap::new(),
-            finder: Finder::new(Builder::new().to_syntax()),
+            finder: Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick),
         }
     }
 }

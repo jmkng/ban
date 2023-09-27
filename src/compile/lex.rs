@@ -418,7 +418,7 @@ mod tests {
 
     use super::Lexer;
 
-    use morel::Finder;
+    use morel::{Finder, Kind};
 
     #[test]
     fn test_lex_default_no_match() {
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_lex_state_change() -> Result<(), Error> {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         let mut block_lexer = Lexer::new("lorem (*", &finder);
         let mut expression_lexer = Lexer::new("lorem ((", &finder);
         block_lexer.next()?;
@@ -536,7 +536,7 @@ mod tests {
             (Token::Identifier, 9..13),
         ];
 
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         let mut lexer = Lexer::new("hello (( name (( ))", &finder);
         for (token, range) in expect {
             assert_eq!(lexer.next(), Ok(Some((token, range.into()))))
@@ -552,7 +552,7 @@ mod tests {
     where
         T: Into<Region>,
     {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         let mut lexer = Lexer::new(source, &finder);
         for (token, region) in expect {
             assert_eq!(lexer.next(), Ok(Some((token, region.into()))))

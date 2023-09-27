@@ -875,7 +875,7 @@ fn error_eof(source: &str) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use morel::Finder;
+    use morel::{Finder, Kind};
 
     use crate::{
         compile::{lex::token::Token, tree::Set},
@@ -890,7 +890,7 @@ mod tests {
 
     #[test]
     fn test_parser_lexer_integration() {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         let mut parser = Parser::new("hello", &finder);
 
         assert_eq!(parser.next(), Ok(Some((Token::Raw, (0..5).into()))));
@@ -900,9 +900,12 @@ mod tests {
     #[test]
     fn test_parse_expression_with_call() {
         let source = r#"hello (( name | prepend text: "hello, " | append "!", "?" | upper ))"#;
-        let template = Parser::new(source, &Finder::new(Builder::new().to_syntax()))
-            .compile(None)
-            .unwrap();
+        let template = Parser::new(
+            source,
+            &Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick),
+        )
+        .compile(None)
+        .unwrap();
 
         let mut iterator = template.get_scope().data.iter();
         iterator.next();
@@ -941,16 +944,17 @@ mod tests {
         let source = "balance: (( - 1000 ))";
         //                         ^-- remove whitespace for negative num
 
-        assert!(
-            Parser::new(source, &Finder::new(Builder::new().to_syntax()))
-                .compile(None)
-                .is_err()
-        );
+        assert!(Parser::new(
+            source,
+            &Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick)
+        )
+        .compile(None)
+        .is_err());
     }
 
     #[test]
     fn test_peek_multiple() {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         let mut parser = Parser::new("(( one two", &finder);
 
         assert!(parser.next().is_ok());
@@ -963,7 +967,7 @@ mod tests {
 
     #[test]
     fn test_parse_tree_valid() {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         //                                                    --- negated
         let source = "(* if this >= that && these == those || not is_admin *)";
         //                  ------------    --------------    ------------
@@ -981,7 +985,7 @@ mod tests {
 
     #[test]
     fn test_parse_tree_missing_base() {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         let mut parser = get_parser_n("(* if this >= *)", &finder, 2);
         //                                          ^-- expected `Base` here
 
@@ -990,7 +994,7 @@ mod tests {
 
     #[test]
     fn test_parse_tree_bad_operator() {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         let mut parser = get_parser_n("(* if this = that *)", &finder, 2);
         //                                        ^-- did you mean `==`?
 
@@ -999,7 +1003,7 @@ mod tests {
 
     #[test]
     fn test_parse_set_pair() {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         //                         ---- identifier 2
         let source = "(* for this, that in thing *)hello(* end *)";
         //      identifier 1 ----     base -----   ----- scope
@@ -1017,7 +1021,7 @@ mod tests {
 
     #[test]
     fn test_parse_mount() {
-        let finder = Finder::new(Builder::new().to_syntax());
+        let finder = Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick);
         //                                        -------- name
         let mut parser = get_parser_n("(* include \"base\" x: abc, y: def *)", &finder, 3);
         //                                                 -------------- mount
@@ -1035,9 +1039,13 @@ mod tests {
     fn test_parse_block() {
         //                     ---- name
         let source = "(* block main *)abc(* end *)def";
-        let template = get_parser_n(source, &Finder::new(Builder::new().to_syntax()), 0)
-            .compile(None)
-            .unwrap();
+        let template = get_parser_n(
+            source,
+            &Finder::new(Builder::new().to_syntax(), Kind::AhoCorasick),
+            0,
+        )
+        .compile(None)
+        .unwrap();
 
         match template.get_scope().data.first().unwrap() {
             Tree::Block(block) => {
